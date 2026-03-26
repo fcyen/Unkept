@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar for snap container but keep functionality */
+.snap-container::-webkit-scrollbar {
+  display: none;
+}
+.snap-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
