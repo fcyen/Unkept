@@ -4,10 +4,11 @@ import Chapter from './Chapter.jsx';
 
 export default function StoryView({ story, onBack }) {
   const [activeChapter, setActiveChapter] = useState(0);
+  const [chapters, setChapters] = useState(() =>
+    story.chapters.filter((c) => c.photoCount > 0)
+  );
   const containerRef = useRef(null);
   const chapterRefs = useRef([]);
-
-  const chapters = story.chapters.filter((c) => c.photoCount > 0);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -38,22 +39,18 @@ export default function StoryView({ story, onBack }) {
     chapterRefs.current[index]?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleReorder = async (chapterId, newPhotoOrder) => {
-    try {
-      const res = await fetch(`/api/story/chapters/${chapterId}/reorder`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photos: newPhotoOrder }),
-      });
-      if (!res.ok) {
-        console.error('Reorder failed');
-        return false;
-      }
-      return true;
-    } catch {
-      console.error('Reorder error');
-      return false;
-    }
+  const handleReorder = (chapterId, newPhotos) => {
+    setChapters((prev) =>
+      prev.map((ch) => {
+        if (ch.id !== chapterId) return ch;
+        const heroIndex = Math.floor(newPhotos.length / 2);
+        return {
+          ...ch,
+          photos: newPhotos,
+          heroPhoto: newPhotos.length > 0 ? newPhotos[heroIndex] : null,
+        };
+      })
+    );
   };
 
   return (

@@ -1,88 +1,21 @@
 import { useState, useRef } from 'react';
+import { extractBatch } from '../lib/exif.js';
+import { generateThumbnails } from '../lib/thumbnails.js';
+import { matchPhotosToEvents } from '../lib/matcher.js';
 
 const SAMPLE_ITINERARY = {
   trip_name: 'Tokyo Trip 2025',
   events: [
-    {
-      id: 'evt_001',
-      date: '2025-03-15',
-      activity: 'Breakfast at Tsukiji Market',
-      venue: 'Tsukiji Outer Market',
-      start_time: '08:00',
-      end_time: '09:30',
-    },
-    {
-      id: 'evt_002',
-      date: '2025-03-15',
-      activity: 'Visit Senso-ji Temple',
-      venue: 'Senso-ji, Asakusa',
-      start_time: '10:00',
-      end_time: '12:00',
-    },
-    {
-      id: 'evt_003',
-      date: '2025-03-15',
-      activity: 'Lunch in Akihabara',
-      venue: 'Akihabara Electric Town',
-      start_time: '12:30',
-      end_time: '14:00',
-    },
-    {
-      id: 'evt_004',
-      date: '2025-03-15',
-      activity: 'Shopping in Harajuku',
-      venue: 'Takeshita Street',
-      start_time: '14:30',
-      end_time: '16:30',
-    },
-    {
-      id: 'evt_005',
-      date: '2025-03-15',
-      activity: 'Sunset at Shibuya Crossing',
-      venue: 'Shibuya Scramble Square',
-      start_time: '17:00',
-      end_time: '18:30',
-    },
-    {
-      id: 'evt_006',
-      date: '2025-03-15',
-      activity: 'Dinner in Shinjuku',
-      venue: 'Omoide Yokocho',
-      start_time: '19:00',
-      end_time: '21:00',
-    },
-    {
-      id: 'evt_007',
-      date: '2025-03-16',
-      activity: 'Morning at Meiji Shrine',
-      venue: 'Meiji Jingu',
-      start_time: '08:00',
-      end_time: '10:00',
-    },
-    {
-      id: 'evt_008',
-      date: '2025-03-16',
-      activity: 'Explore Teamlab Borderless',
-      venue: 'Azabudai Hills',
-      start_time: '10:30',
-      end_time: '13:00',
-    },
-    {
-      id: 'evt_009',
-      date: '2025-03-16',
-      activity: 'Afternoon in Odaiba',
-      venue: 'Odaiba Seaside Park',
-      start_time: '14:00',
-      end_time: '17:00',
-    },
-    {
-      id: 'evt_010',
-      date: '2025-03-16',
-      activity: 'Night Ramen Crawl',
-      venue: 'Shinjuku Kabukicho',
-      start_time: '19:00',
-      end_time: '22:00',
-    },
+    { id: 'evt_001', date: '2025-03-15', activity: 'Breakfast at Tsukiji Market', venue: 'Tsukiji Outer Market', start_time: '08:00', end_time: '09:30' },
+    { id: 'evt_002', date: '2025-03-15', activity: 'Visit Senso-ji Temple', venue: 'Senso-ji, Asakusa', start_time: '10:00', end_time: '12:00' },
+    { id: 'evt_003', date: '2025-03-15', activity: 'Lunch in Akihabara', venue: 'Akihabara Electric Town', start_time: '12:30', end_time: '14:00' },
+    { id: 'evt_004', date: '2025-03-15', activity: 'Shopping in Harajuku', venue: 'Takeshita Street', start_time: '14:30', end_time: '16:30' },
+    { id: 'evt_005', date: '2025-03-15', activity: 'Sunset at Shibuya Crossing', venue: 'Shibuya Scramble Square', start_time: '17:00', end_time: '18:30' },
+    { id: 'evt_006', date: '2025-03-15', activity: 'Dinner in Shinjuku', venue: 'Omoide Yokocho', start_time: '19:00', end_time: '21:00' },
+    { id: 'evt_007', date: '2025-03-16', activity: 'Morning at Meiji Shrine', venue: 'Meiji Jingu', start_time: '08:00', end_time: '10:00' },
+    { id: 'evt_008', date: '2025-03-16', activity: 'Explore Teamlab Borderless', venue: 'Azabudai Hills', start_time: '10:30', end_time: '13:00' },
+    { id: 'evt_009', date: '2025-03-16', activity: 'Afternoon in Odaiba', venue: 'Odaiba Seaside Park', start_time: '14:00', end_time: '17:00' },
+    { id: 'evt_010', date: '2025-03-16', activity: 'Night Ramen Crawl', venue: 'Shinjuku Kabukicho', start_time: '19:00', end_time: '22:00' },
   ],
 };
 
@@ -90,7 +23,7 @@ export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
   const [itineraryText, setItineraryText] = useState('');
   const [useSample, setUseSample] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
@@ -115,11 +48,10 @@ export default function UploadPage({ onStoryReady }) {
     }
 
     setError('');
-    setUploading(true);
+    setProcessing(true);
 
     try {
-      // 1. Upload itinerary
-      setProgress('Saving itinerary...');
+      // 1. Parse itinerary
       let itinerary;
       if (useSample) {
         itinerary = SAMPLE_ITINERARY;
@@ -128,53 +60,35 @@ export default function UploadPage({ onStoryReady }) {
           itinerary = JSON.parse(itineraryText);
         } catch {
           setError('Invalid JSON in itinerary field.');
-          setUploading(false);
+          setProcessing(false);
           return;
         }
       }
 
-      const itinRes = await fetch('/api/itinerary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(itinerary),
+      // 2. Extract EXIF timestamps
+      setProgress(`Reading EXIF data... 0/${photos.length}`);
+      const photoData = await extractBatch(photos, (done, total) => {
+        setProgress(`Reading EXIF data... ${done}/${total}`);
       });
-      if (!itinRes.ok) {
-        const data = await itinRes.json();
-        throw new Error(data.error || 'Failed to save itinerary');
-      }
 
-      // 2. Upload photos in batches
-      setProgress(`Uploading ${photos.length} photos...`);
-      const formData = new FormData();
-      for (const photo of photos) {
-        formData.append('photos', photo);
-      }
-
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      // 3. Generate thumbnails
+      setProgress(`Generating thumbnails... 0/${photos.length}`);
+      await generateThumbnails(photoData, (done, total) => {
+        setProgress(`Generating thumbnails... ${done}/${total}`);
       });
-      if (!uploadRes.ok) {
-        const data = await uploadRes.json();
-        throw new Error(data.error || 'Failed to upload photos');
-      }
 
-      const uploadData = await uploadRes.json();
-      setProgress(`Uploaded ${uploadData.count} photos. Generating story...`);
+      // 4. Match photos to events
+      setProgress('Matching photos to events...');
+      const chapters = matchPhotosToEvents(photoData, itinerary);
 
-      // 3. Generate story
-      const storyRes = await fetch('/api/story');
-      if (!storyRes.ok) {
-        const data = await storyRes.json();
-        throw new Error(data.error || 'Failed to generate story');
-      }
-
-      const story = await storyRes.json();
-      onStoryReady(story);
+      onStoryReady({
+        trip_name: itinerary.trip_name,
+        chapters,
+      });
     } catch (err) {
       setError(err.message);
     } finally {
-      setUploading(false);
+      setProcessing(false);
       setProgress('');
     }
   };
@@ -272,10 +186,10 @@ export default function UploadPage({ onStoryReady }) {
         {/* Generate Button */}
         <button
           onClick={handleGenerate}
-          disabled={uploading}
+          disabled={processing}
           className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold rounded-xl text-lg transition-colors"
         >
-          {uploading ? progress || 'Processing...' : 'Generate Story'}
+          {processing ? progress || 'Processing...' : 'Generate Story'}
         </button>
       </div>
     </div>

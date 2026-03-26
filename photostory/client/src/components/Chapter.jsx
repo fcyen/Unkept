@@ -1,10 +1,11 @@
 import PhotoGrid from './PhotoGrid.jsx';
+import LazyImage from './LazyImage.jsx';
 
 export default function Chapter({ chapter, onReorder }) {
   const { id, activity, venue, date, start_time, end_time, photos, heroPhoto } = chapter;
 
-  const handleReorder = async (newOrder) => {
-    return onReorder(id, newOrder);
+  const handleReorder = (newPhotos) => {
+    onReorder(id, newPhotos);
   };
 
   return (
@@ -12,8 +13,8 @@ export default function Chapter({ chapter, onReorder }) {
       {/* Hero Section */}
       {heroPhoto && (
         <div className="relative h-[50vh] overflow-hidden">
-          <img
-            src={`/api/photos/${heroPhoto}`}
+          <LazyImage
+            src={heroPhoto.objectUrl}
             alt={activity}
             className="w-full h-full object-cover"
           />
@@ -32,7 +33,6 @@ export default function Chapter({ chapter, onReorder }) {
         </div>
       )}
 
-      {/* No hero fallback */}
       {!heroPhoto && (
         <div className="p-8 pt-16">
           <div className="max-w-4xl">

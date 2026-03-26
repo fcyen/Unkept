@@ -14,9 +14,9 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-function SortablePhoto({ filename }) {
+function SortablePhoto({ photo }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: filename });
+    useSortable({ id: photo.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -34,9 +34,10 @@ function SortablePhoto({ filename }) {
       className="aspect-square rounded-lg overflow-hidden cursor-grab active:cursor-grabbing ring-1 ring-gray-800 hover:ring-blue-500 transition-all"
     >
       <img
-        src={`/api/photos/${filename}`}
-        alt=""
+        src={photo.thumbnailUrl || photo.objectUrl}
+        alt={photo.name}
         className="w-full h-full object-cover"
+        loading="lazy"
         draggable={false}
       />
     </div>
@@ -52,20 +53,16 @@ export default function PhotoGrid({ photos: initialPhotos, onReorder }) {
     })
   );
 
-  const handleDragEnd = async (event) => {
+  const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = photos.indexOf(active.id);
-    const newIndex = photos.indexOf(over.id);
+    const oldIndex = photos.findIndex((p) => p.id === active.id);
+    const newIndex = photos.findIndex((p) => p.id === over.id);
     const newOrder = arrayMove(photos, oldIndex, newIndex);
 
     setPhotos(newOrder);
-
-    const success = await onReorder(newOrder);
-    if (!success) {
-      setPhotos(photos); // revert
-    }
+    onReorder(newOrder);
   };
 
   if (photos.length === 0) {
@@ -76,10 +73,10 @@ export default function PhotoGrid({ photos: initialPhotos, onReorder }) {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={photos} strategy={rectSortingStrategy}>
+      <SortableContext items={photos.map((p) => p.id)} strategy={rectSortingStrategy}>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {photos.map((filename) => (
-            <SortablePhoto key={filename} filename={filename} />
+          {photos.map((photo) => (
+            <SortablePhoto key={photo.id} photo={photo} />
           ))}
         </div>
       </SortableContext>
