@@ -22,7 +22,7 @@ const SAMPLE_ITINERARY = {
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
   const [itineraryText, setItineraryText] = useState('');
-  const [itineraryMode, setItineraryMode] = useState('none'); // 'none' | 'sample' | 'custom'
+  const [itineraryMode, setItineraryMode] = useState('none');
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
@@ -51,7 +51,6 @@ export default function UploadPage({ onStoryReady }) {
     setProcessing(true);
 
     try {
-      // 1. Parse itinerary (or skip)
       let itinerary = null;
       if (itineraryMode === 'sample') {
         itinerary = SAMPLE_ITINERARY;
@@ -65,19 +64,16 @@ export default function UploadPage({ onStoryReady }) {
         }
       }
 
-      // 2. Extract EXIF timestamps
       setProgress(`Reading EXIF data... 0/${photos.length}`);
       const photoData = await extractBatch(photos, (done, total) => {
         setProgress(`Reading EXIF data... ${done}/${total}`);
       });
 
-      // 3. Generate thumbnails
       setProgress(`Generating thumbnails... 0/${photos.length}`);
       await generateThumbnails(photoData, (done, total) => {
         setProgress(`Generating thumbnails... ${done}/${total}`);
       });
 
-      // 4. Match photos to events (or auto-group)
       setProgress(itinerary ? 'Matching photos to events...' : 'Grouping photos by time...');
       const chapters = matchPhotosToEvents(photoData, itinerary);
 
@@ -94,18 +90,21 @@ export default function UploadPage({ onStoryReady }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-8">
-        <div className="text-center">
-          <h1 className="text-5xl font-bold text-white mb-2">PhotoStory</h1>
-          <p className="text-gray-400 text-lg">
+    <div className="min-h-screen bg-cream flex items-center justify-center px-8 py-16">
+      <div className="max-w-xl w-full">
+        <div className="text-center mb-16">
+          <h1 className="font-serif text-5xl md:text-6xl font-semibold text-ink mb-3">
+            PhotoStory
+          </h1>
+          <div className="w-12 h-px bg-faint mx-auto mb-4" />
+          <p className="font-sans text-muted text-sm tracking-wide">
             Turn your photos into a beautiful narrative
           </p>
         </div>
 
         {/* Photo Upload */}
         <div
-          className="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
+          className="border border-faint/40 rounded-sm p-12 text-center cursor-pointer hover:border-ink/30 transition-colors mb-8"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handlePhotoDrop}
           onClick={() => fileInputRef.current?.click()}
@@ -118,44 +117,48 @@ export default function UploadPage({ onStoryReady }) {
             className="hidden"
             onChange={handleFileSelect}
           />
-          <div className="text-gray-400">
-            <svg className="mx-auto h-12 w-12 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          <div>
+            <svg className="mx-auto h-10 w-10 mb-4 text-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p className="text-lg font-medium">
+            <p className="font-serif text-lg text-ink">
               {photos.length > 0
                 ? `${photos.length} photo${photos.length !== 1 ? 's' : ''} selected`
                 : 'Drop photos here or click to browse'}
             </p>
-            <p className="text-sm text-gray-500 mt-1">JPG, PNG, HEIC, WebP, TIFF</p>
+            <p className="font-sans text-xs text-faint mt-2 tracking-wide">
+              JPG, PNG, HEIC, WebP, TIFF
+            </p>
           </div>
         </div>
 
         {photos.length > 0 && (
           <button
             onClick={() => setPhotos([])}
-            className="text-sm text-red-400 hover:text-red-300"
+            className="font-sans text-xs text-muted hover:text-ink tracking-wide mb-8 block"
           >
             Clear all photos
           </button>
         )}
 
         {/* Itinerary */}
-        <div className="space-y-3">
-          <label className="text-gray-300 font-medium block">Itinerary</label>
-          <div className="flex gap-2">
+        <div className="mb-10">
+          <p className="font-sans text-xs tracking-[0.2em] uppercase text-faint mb-4">
+            Itinerary
+          </p>
+          <div className="flex gap-2 mb-4">
             {[
-              { value: 'none', label: 'No itinerary' },
-              { value: 'sample', label: 'Sample trip' },
-              { value: 'custom', label: 'Custom JSON' },
+              { value: 'none', label: 'None' },
+              { value: 'sample', label: 'Sample' },
+              { value: 'custom', label: 'Custom' },
             ].map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setItineraryMode(opt.value)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 text-xs font-sans tracking-wide transition-colors border ${
                   itineraryMode === opt.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+                    ? 'border-ink text-ink'
+                    : 'border-faint/40 text-muted hover:border-ink/30 hover:text-ink'
                 }`}
               >
                 {opt.label}
@@ -164,8 +167,8 @@ export default function UploadPage({ onStoryReady }) {
           </div>
 
           {itineraryMode === 'none' && (
-            <p className="text-sm text-gray-500">
-              Chapters will be auto-generated from photo timestamps — grouped by date and time gaps.
+            <p className="font-sans text-xs text-faint leading-relaxed">
+              Chapters will be auto-generated from photo timestamps &mdash; grouped by date and time gaps.
             </p>
           )}
 
@@ -173,17 +176,17 @@ export default function UploadPage({ onStoryReady }) {
             <textarea
               value={itineraryText}
               onChange={(e) => setItineraryText(e.target.value)}
-              placeholder='Paste your itinerary JSON here...'
-              className="w-full h-48 bg-gray-900 border border-gray-700 rounded-lg p-4 text-gray-300 font-mono text-sm focus:outline-none focus:border-blue-500 resize-none"
+              placeholder="Paste your itinerary JSON here..."
+              className="w-full h-40 bg-white border border-faint/40 p-4 font-mono text-xs text-ink focus:outline-none focus:border-ink resize-none"
             />
           )}
 
           {itineraryMode === 'sample' && (
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 max-h-48 overflow-y-auto">
-              <p className="text-sm text-gray-400 mb-2 font-medium">{SAMPLE_ITINERARY.trip_name}</p>
+            <div className="border border-faint/40 p-4 max-h-40 overflow-y-auto">
+              <p className="font-serif text-sm text-ink mb-2">{SAMPLE_ITINERARY.trip_name}</p>
               {SAMPLE_ITINERARY.events.map((evt) => (
-                <p key={evt.id} className="text-xs text-gray-500">
-                  {evt.date} {evt.start_time}–{evt.end_time} · {evt.activity}
+                <p key={evt.id} className="font-sans text-xs text-muted leading-relaxed">
+                  {evt.date} {evt.start_time}&ndash;{evt.end_time} &middot; {evt.activity}
                 </p>
               ))}
             </div>
@@ -192,8 +195,8 @@ export default function UploadPage({ onStoryReady }) {
 
         {/* Error */}
         {error && (
-          <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-400 text-sm">
-            {error}
+          <div className="border border-red-300 bg-red-50 p-3 mb-6">
+            <p className="font-sans text-xs text-red-600">{error}</p>
           </div>
         )}
 
@@ -201,7 +204,7 @@ export default function UploadPage({ onStoryReady }) {
         <button
           onClick={handleGenerate}
           disabled={processing}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold rounded-xl text-lg transition-colors"
+          className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
         >
           {processing ? progress || 'Processing...' : 'Generate Story'}
         </button>

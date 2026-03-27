@@ -4,13 +4,28 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Hide scrollbar for snap container but keep functionality */
-.snap-container::-webkit-scrollbar {
-  display: none;
+body {
+  background: #FAF8F5;
+  color: #1a1a1a;
+  font-family: 'Inter', system-ui, sans-serif;
 }
-.snap-container {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+
+/* Editorial image treatment */
+.editorial-img {
+  transition: opacity 0.6s ease;
+}
+
+/* Subtle fade-in on scroll */
+.fade-in-section {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+.fade-in-section.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
