@@ -34,8 +34,9 @@ async function reverseGeocode(lat, lon) {
       location = country;
     }
 
-    cache.set(key, location || null);
-    return location || null;
+    const result = { location: location || null, country: country || null };
+    cache.set(key, result);
+    return result;
   } catch {
     return null;
   }
@@ -58,7 +59,7 @@ export async function resolveChapterLocation(photos) {
   console.log(`[PhotoStory] Geocoding: ${median.latitude}, ${median.longitude}`);
 
   const result = await reverseGeocode(median.latitude, median.longitude);
-  console.log(`[PhotoStory] Location resolved: ${result}`);
+  console.log(`[PhotoStory] Location resolved:`, result);
   return result;
 }
 
@@ -67,13 +68,29 @@ export async function resolveChapterLocation(photos) {
  * Throttles requests to respect Nominatim rate limits.
  */
 export async function resolveLocations(chapters, onProgress) {
+  const countries = [];
+
   for (let i = 0; i < chapters.length; i++) {
-    chapters[i].location = await resolveChapterLocation(chapters[i].photos);
+    const result = await resolveChapterLocation(chapters[i].photos);
+    chapters[i].location = result ? result.location : null;
+    if (result?.country) countries.push(result.country);
     if (onProgress) onProgress(i + 1, chapters.length);
     // Rate limit: 1 req/sec for Nominatim
     if (i < chapters.length - 1) {
       await new Promise((r) => setTimeout(r, 1100));
     }
   }
-  return chapters;
+
+  // Return the most common country across chapters
+  const dominantCountry = getMostCommon(countries);
+  return { chapters, country: dominantCountry };
+}
+
+function getMostCommon(arr) {
+  if (arr.length === 0) return null;
+  const counts = {};
+  for (const val of arr) {
+    counts[val] = (counts[val] || 0) + 1;
+  }
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }

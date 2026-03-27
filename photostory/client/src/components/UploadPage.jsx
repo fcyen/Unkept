@@ -96,12 +96,20 @@ export default function UploadPage({ onStoryReady }) {
 
       // Resolve GPS locations for each chapter
       setProgress('Resolving locations...');
-      await resolveLocations(chapters, (done, total) => {
+      const { country } = await resolveLocations(chapters, (done, total) => {
         setProgress(`Resolving locations... ${done}/${total}`);
       });
 
+      // Build trip name: "Country, Month Year" or use itinerary name
+      let tripName;
+      if (itinerary) {
+        tripName = itinerary.trip_name;
+      } else {
+        tripName = buildTripName(country, photoData);
+      }
+
       onStoryReady({
-        trip_name: itinerary ? itinerary.trip_name : 'My Photo Story',
+        trip_name: tripName,
         chapters,
       });
     } catch (err) {
@@ -259,4 +267,31 @@ export default function UploadPage({ onStoryReady }) {
       </div>
     </div>
   );
+}
+
+function buildTripName(country, photoData) {
+  // Get month/year from the earliest photo timestamp
+  const timestamps = photoData
+    .map((p) => p.timestamp)
+    .filter(Boolean)
+    .sort();
+
+  if (timestamps.length === 0 && !country) return 'My Photo Story';
+
+  let datePart = '';
+  if (timestamps.length > 0) {
+    const earliest = new Date(timestamps[0]);
+    const latest = new Date(timestamps[timestamps.length - 1]);
+    const monthFmt = (d) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    if (earliest.getMonth() === latest.getMonth() && earliest.getFullYear() === latest.getFullYear()) {
+      datePart = monthFmt(earliest);
+    } else {
+      datePart = `${earliest.toLocaleDateString('en-US', { month: 'long' })} – ${monthFmt(latest)}`;
+    }
+  }
+
+  if (country && datePart) return `${country}, ${datePart}`;
+  if (country) return country;
+  return datePart || 'My Photo Story';
 }
