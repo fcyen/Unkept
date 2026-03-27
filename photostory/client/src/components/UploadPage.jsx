@@ -22,7 +22,7 @@ const SAMPLE_ITINERARY = {
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
   const [itineraryText, setItineraryText] = useState('');
-  const [useSample, setUseSample] = useState(true);
+  const [itineraryMode, setItineraryMode] = useState('none'); // 'none' | 'sample' | 'custom'
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
@@ -51,11 +51,11 @@ export default function UploadPage({ onStoryReady }) {
     setProcessing(true);
 
     try {
-      // 1. Parse itinerary
-      let itinerary;
-      if (useSample) {
+      // 1. Parse itinerary (or skip)
+      let itinerary = null;
+      if (itineraryMode === 'sample') {
         itinerary = SAMPLE_ITINERARY;
-      } else {
+      } else if (itineraryMode === 'custom') {
         try {
           itinerary = JSON.parse(itineraryText);
         } catch {
@@ -77,12 +77,12 @@ export default function UploadPage({ onStoryReady }) {
         setProgress(`Generating thumbnails... ${done}/${total}`);
       });
 
-      // 4. Match photos to events
-      setProgress('Matching photos to events...');
+      // 4. Match photos to events (or auto-group)
+      setProgress(itinerary ? 'Matching photos to events...' : 'Grouping photos by time...');
       const chapters = matchPhotosToEvents(photoData, itinerary);
 
       onStoryReady({
-        trip_name: itinerary.trip_name,
+        trip_name: itinerary ? itinerary.trip_name : 'My Photo Story',
         chapters,
       });
     } catch (err) {
@@ -142,20 +142,34 @@ export default function UploadPage({ onStoryReady }) {
 
         {/* Itinerary */}
         <div className="space-y-3">
-          <div className="flex items-center gap-4">
-            <label className="text-gray-300 font-medium">Itinerary</label>
-            <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useSample}
-                onChange={(e) => setUseSample(e.target.checked)}
-                className="rounded"
-              />
-              Use sample (Tokyo 2-day trip)
-            </label>
+          <label className="text-gray-300 font-medium block">Itinerary</label>
+          <div className="flex gap-2">
+            {[
+              { value: 'none', label: 'No itinerary' },
+              { value: 'sample', label: 'Sample trip' },
+              { value: 'custom', label: 'Custom JSON' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setItineraryMode(opt.value)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  itineraryMode === opt.value
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
 
-          {!useSample && (
+          {itineraryMode === 'none' && (
+            <p className="text-sm text-gray-500">
+              Chapters will be auto-generated from photo timestamps — grouped by date and time gaps.
+            </p>
+          )}
+
+          {itineraryMode === 'custom' && (
             <textarea
               value={itineraryText}
               onChange={(e) => setItineraryText(e.target.value)}
@@ -164,7 +178,7 @@ export default function UploadPage({ onStoryReady }) {
             />
           )}
 
-          {useSample && (
+          {itineraryMode === 'sample' && (
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 max-h-48 overflow-y-auto">
               <p className="text-sm text-gray-400 mb-2 font-medium">{SAMPLE_ITINERARY.trip_name}</p>
               {SAMPLE_ITINERARY.events.map((evt) => (
