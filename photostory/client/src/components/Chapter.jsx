@@ -2,7 +2,7 @@ import EditablePhotoLayout from './EditablePhotoLayout.jsx';
 import FadeIn from './FadeIn.jsx';
 
 export default function Chapter({ chapter, chapterNumber, onReorder }) {
-  const { id, activity, venue, date, start_time, end_time, photos, heroPhoto } = chapter;
+  const { id, activity, venue, location, date, start_time, end_time, photos, heroPhoto } = chapter;
 
   const handleReorder = (newPhotos) => {
     onReorder(id, newPhotos);
@@ -27,8 +27,10 @@ export default function Chapter({ chapter, chapterNumber, onReorder }) {
           <h2 className="font-serif text-3xl md:text-5xl font-semibold text-ink leading-tight mb-3">
             {activity}
           </h2>
-          {venue && (
-            <p className="font-serif text-lg italic text-muted">{venue}</p>
+          {(venue || location) && (
+            <p className="font-serif text-lg italic text-muted">
+              {[venue, location].filter(Boolean).join(' \u2014 ')}
+            </p>
           )}
         </div>
       </FadeIn>

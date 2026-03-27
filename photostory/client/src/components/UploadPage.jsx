@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { extractBatch } from '../lib/exif.js';
 import { generateThumbnails } from '../lib/thumbnails.js';
 import { matchPhotosToEvents } from '../lib/matcher.js';
+import { resolveLocations } from '../lib/geocode.js';
 
 const SAMPLE_ITINERARY = {
   trip_name: 'Tokyo Trip 2025',
@@ -21,6 +22,7 @@ const SAMPLE_ITINERARY = {
 
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
+  const [previews, setPreviews] = useState([]); // blob URLs for thumbnails
   const [itineraryText, setItineraryText] = useState('');
   const [itineraryMode, setItineraryMode] = useState('none');
   const [processing, setProcessing] = useState(false);
@@ -28,17 +30,32 @@ export default function UploadPage({ onStoryReady }) {
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
+  const addPhotos = (files) => {
+    setPhotos((prev) => [...prev, ...files]);
+    // Generate quick previews (small, fast)
+    for (const file of files) {
+      const url = URL.createObjectURL(file);
+      setPreviews((prev) => [...prev, url]);
+    }
+  };
+
+  const clearPhotos = () => {
+    previews.forEach((url) => URL.revokeObjectURL(url));
+    setPreviews([]);
+    setPhotos([]);
+  };
+
   const handlePhotoDrop = (e) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter((f) =>
       /\.(jpg|jpeg|png|heic|heif|webp|tiff)$/i.test(f.name)
     );
-    setPhotos((prev) => [...prev, ...files]);
+    addPhotos(files);
   };
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
-    setPhotos((prev) => [...prev, ...files]);
+    addPhotos(files);
   };
 
   const handleGenerate = async () => {
@@ -77,6 +94,12 @@ export default function UploadPage({ onStoryReady }) {
       setProgress(itinerary ? 'Matching photos to events...' : 'Grouping photos by time...');
       const chapters = matchPhotosToEvents(photoData, itinerary);
 
+      // Resolve GPS locations for each chapter
+      setProgress('Resolving locations...');
+      await resolveLocations(chapters, (done, total) => {
+        setProgress(`Resolving locations... ${done}/${total}`);
+      });
+
       onStoryReady({
         trip_name: itinerary ? itinerary.trip_name : 'My Photo Story',
         chapters,
@@ -104,7 +127,7 @@ export default function UploadPage({ onStoryReady }) {
 
         {/* Photo Upload */}
         <div
-          className="border border-faint/40 rounded-sm p-12 text-center cursor-pointer hover:border-ink/30 transition-colors mb-8"
+          className="border border-faint/40 rounded-sm text-center cursor-pointer hover:border-ink/30 transition-colors mb-4 overflow-hidden"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handlePhotoDrop}
           onClick={() => fileInputRef.current?.click()}
@@ -117,24 +140,49 @@ export default function UploadPage({ onStoryReady }) {
             className="hidden"
             onChange={handleFileSelect}
           />
-          <div>
-            <svg className="mx-auto h-10 w-10 mb-4 text-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p className="font-serif text-lg text-ink">
-              {photos.length > 0
-                ? `${photos.length} photo${photos.length !== 1 ? 's' : ''} selected`
-                : 'Drop photos here or click to browse'}
-            </p>
-            <p className="font-sans text-xs text-faint mt-2 tracking-wide">
-              JPG, PNG, HEIC, WebP, TIFF
-            </p>
-          </div>
+
+          {previews.length === 0 ? (
+            <div className="p-12">
+              <svg className="mx-auto h-10 w-10 mb-4 text-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <p className="font-serif text-lg text-ink">
+                Drop photos here or click to browse
+              </p>
+              <p className="font-sans text-xs text-faint mt-2 tracking-wide">
+                JPG, PNG, HEIC, WebP, TIFF
+              </p>
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 mb-3">
+                {previews.slice(0, 24).map((url, i) => (
+                  <div key={i} className="aspect-square overflow-hidden bg-faint/10">
+                    <img
+                      src={url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ))}
+                {previews.length > 24 && (
+                  <div className="aspect-square bg-faint/10 flex items-center justify-center">
+                    <span className="font-sans text-xs text-muted">
+                      +{previews.length - 24}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <p className="font-sans text-xs text-muted">
+                {photos.length} photo{photos.length !== 1 ? 's' : ''} &middot; click to add more
+              </p>
+            </div>
+          )}
         </div>
 
         {photos.length > 0 && (
           <button
-            onClick={() => setPhotos([])}
+            onClick={(e) => { e.stopPropagation(); clearPhotos(); }}
             className="font-sans text-xs text-muted hover:text-ink tracking-wide mb-8 block"
           >
             Clear all photos
