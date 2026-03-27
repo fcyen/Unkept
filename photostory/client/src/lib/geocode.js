@@ -47,13 +47,19 @@ async function reverseGeocode(lat, lon) {
  */
 export async function resolveChapterLocation(photos) {
   const withGps = photos.filter((p) => p.latitude != null && p.longitude != null);
-  if (withGps.length === 0) return null;
+  if (withGps.length === 0) {
+    console.log('[PhotoStory] No GPS data in chapter photos');
+    return null;
+  }
 
   // Use median photo's coordinates (middle of the sorted set)
   const midIdx = Math.floor(withGps.length / 2);
   const median = withGps[midIdx];
+  console.log(`[PhotoStory] Geocoding: ${median.latitude}, ${median.longitude}`);
 
-  return reverseGeocode(median.latitude, median.longitude);
+  const result = await reverseGeocode(median.latitude, median.longitude);
+  console.log(`[PhotoStory] Location resolved: ${result}`);
+  return result;
 }
 
 /**

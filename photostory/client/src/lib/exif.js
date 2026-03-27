@@ -5,26 +5,37 @@ import exifr from 'exifr';
  * Returns { timestamp, latitude, longitude } or nulls.
  */
 export async function extractExif(file) {
+  let timestamp = null;
+  let latitude = null;
+  let longitude = null;
+
   try {
+    // Extract date tags
     const exif = await exifr.parse(file, {
       pick: ['DateTimeOriginal', 'CreateDate', 'ModifyDate'],
-      gps: true,
     });
-    if (!exif) return { timestamp: null, latitude: null, longitude: null };
-
-    const dateVal = exif.DateTimeOriginal || exif.CreateDate || exif.ModifyDate;
-    let timestamp = null;
-    if (dateVal) {
-      timestamp = dateVal instanceof Date ? dateVal.toISOString() : new Date(dateVal).toISOString();
+    if (exif) {
+      const dateVal = exif.DateTimeOriginal || exif.CreateDate || exif.ModifyDate;
+      if (dateVal) {
+        timestamp = dateVal instanceof Date ? dateVal.toISOString() : new Date(dateVal).toISOString();
+      }
     }
-
-    const latitude = exif.latitude ?? null;
-    const longitude = exif.longitude ?? null;
-
-    return { timestamp, latitude, longitude };
   } catch {
-    return { timestamp: null, latitude: null, longitude: null };
+    // ignore
   }
+
+  try {
+    // Extract GPS separately — exifr.gps() handles the GPS IFD directly
+    const gps = await exifr.gps(file);
+    if (gps) {
+      latitude = gps.latitude ?? null;
+      longitude = gps.longitude ?? null;
+    }
+  } catch {
+    // ignore
+  }
+
+  return { timestamp, latitude, longitude };
 }
 
 /**
