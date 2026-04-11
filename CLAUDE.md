@@ -5,7 +5,7 @@ Privacy-first web app that turns photo collections into editorial stories. All s
 
 ## Repo layout
 ```
-photostory/
+/  (repo root)
   client/       React + Vite + Tailwind (all active development)
   server/       Express stub (Phase 3, not in active development)
   EXECUTIVE_SUMMARY.md   Product overview + open founder questions
@@ -40,7 +40,7 @@ Develop on `main`. Feature branches off `main`, merged back via PR.
 
 ## Dev
 ```
-cd photostory/client
+cd client
 npm install
 npm run dev
 ```

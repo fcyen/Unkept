@@ -11,10 +11,11 @@ PhotoStory is a privacy-first web app that transforms a collection of photos (up
 ## Directory Structure
 
 ```
-photostory/
+/  (repo root)
 ├── ARCHITECTURE.md
-├── PLAN-v2.md                           # Implementation plan (4 PRs)
-├── DECISIONS-v2.md                      # Design decision log
+├── PLAN-v3.md                           # Implementation plan (current)
+├── EXECUTIVE_SUMMARY.md                 # Product overview + open questions
+├── CLAUDE.md                            # Claude Code guide
 ├── client/                              # React + Vite + Tailwind
 │   ├── index.html
 │   ├── vite.config.js

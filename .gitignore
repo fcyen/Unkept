@@ -1,2 +1,5 @@
 dist/
 node_modules/
+server/uploads/*
+!server/.gitkeep-uploads
+.env
