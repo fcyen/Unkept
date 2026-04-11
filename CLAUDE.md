@@ -29,7 +29,7 @@ Privacy-first web app that turns photo collections into editorial stories. All s
 
 ## Key decisions
 - No open source — do not suggest making code public
-- No drag-and-drop (dnd-kit removed)
+- No drag-to-reorder within stories (dnd-kit removed from EditablePhotoLayout)
 - No itinerary feature (removed in v2)
 - Nominatim for geocoding (Part 2 only — it's a network call)
 - PWA manifest added; service worker deferred until first ML model ships
