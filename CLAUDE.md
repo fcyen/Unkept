@@ -8,9 +8,10 @@ Privacy-first web app that turns photo collections into editorial stories. All s
 /  (repo root)
   client/       React + Vite + Tailwind (all active development)
   server/       Express stub (Phase 3, not in active development)
-  EXECUTIVE_SUMMARY.md   Product overview + open founder questions
+  EXECUTIVE_SUMMARY.md   Product overview
+  MVP.md                 MVP feature scope and quality bar
   ARCHITECTURE.md        System design
-  PLAN-v3.md             Implementation plan (current, supersedes PLAN-v2.md)
+  IMPLEMENTATION-PLAN.md Implementation plan (supersedes PLAN-v3.md)
 ```
 
 ## Architecture in one paragraph
