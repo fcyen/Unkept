@@ -19,21 +19,6 @@ This plan reflects the revised architecture from the system design review (April
 
 ---
 
-## Branch Consolidation (TODO — do before any new implementation)
-
-**Current state:**
-- `claude/photostory-v2-planning-p6C7s` — v2 planning docs, pipeline infra skeleton
-- `claude/review-system-architecture-305Gq` — architecture review notes (current)
-
-**Recommendation:** Both branches contain planning work only; neither is a shippable feature branch. Consolidate by:
-1. Merging both into a single clean branch (e.g. `photostory/main` or `main`)
-2. Treating all prior branches as superseded — the v3 plan replaces v2
-3. All future implementation work branches off the consolidated base
-
-**Action required from founder:** confirm branch naming convention and which branch to use as the base going forward.
-
----
-
 ## Data Model (revised)
 
 ### Part 1 Output — Story Skeleton (serialisable)
