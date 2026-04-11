@@ -246,7 +246,14 @@ UI thread (while Phase 1A runs in worker):
 - `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio); remove dnd-kit drag-to-reorder, keep layout rendering
 - Progressive geocoding: chapters update in place as locations resolve
 
-**PR 2C: Mode indicator + boundary notification**
+**PR 2C: Photo swap interaction**
+- Each selected photo has a swap affordance (icon overlay on hover/tap)
+- Tapping swap opens a grid of 4–6 alternative candidates from the same chapter's pool
+- One tap selects the replacement; the story updates in place
+- Swap choices are recorded in the Story Skeleton (`meta.swapHistory`) as the first source of preference signal for the personalisation roadmap
+- Drag-to-reorder within a story remains out of scope
+
+**PR 2D: Mode indicator + boundary notification**
 - `ModeBadge.jsx` — "Local mode" / "Server mode" badge, always visible in header
 - `ServerModeBoundaryModal.jsx` — one-time notification explaining what gets sent when first server feature is triggered
 - Triggered on: first geocoding request (if routed via server) or first caption generation
