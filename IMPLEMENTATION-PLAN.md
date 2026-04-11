@@ -1,6 +1,6 @@
-# PhotoStory — Implementation Plan v3
+# PhotoStory — Implementation Plan
 
-This plan supersedes PLAN-v2.md and reflects the revised architecture from the system design review (April 2026).
+This plan reflects the revised architecture from the system design review (April 2026). For MVP feature scope and quality bar, see `MVP.md`.
 
 ---
 
@@ -16,21 +16,6 @@ This plan supersedes PLAN-v2.md and reflects the revised architecture from the s
 | PWA manifest now | Service worker deferred until first ML model is added |
 | Compatibility gate | Check before any processing; block low-end devices |
 | Mode indicator | "Local mode" / "Server mode" badge; one-time boundary notification on first server transition |
-
----
-
-## Branch Consolidation (TODO — do before any new implementation)
-
-**Current state:**
-- `claude/photostory-v2-planning-p6C7s` — v2 planning docs, pipeline infra skeleton
-- `claude/review-system-architecture-305Gq` — architecture review notes (current)
-
-**Recommendation:** Both branches contain planning work only; neither is a shippable feature branch. Consolidate by:
-1. Merging both into a single clean branch (e.g. `photostory/main` or `main`)
-2. Treating all prior branches as superseded — the v3 plan replaces v2
-3. All future implementation work branches off the consolidated base
-
-**Action required from founder:** confirm branch naming convention and which branch to use as the base going forward.
 
 ---
 
@@ -199,73 +184,82 @@ UI thread (while Phase 1A runs in worker):
 
 ## Implementation Phases
 
-### Phase 0 — Foundation (do first, unblocks everything)
+### Phase 0 — Foundation **[MVP]** (do first, unblocks everything)
 
-| Task | Detail |
-|---|---|
-| Branch consolidation | Merge v2 planning and architecture branches into a clean base |
-| PWA manifest | `public/manifest.json` + meta tags in `index.html` (done — see below) |
-| Compatibility check | Gate app on load; block if requirements not met |
-| Local/Server mode badge | UI component; starts as "Local mode"; persists in header |
-| Remove itinerary UI | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
-| Remove dnd-kit | `package.json`, `EditablePhotoLayout.jsx` — removes drag-to-reorder within story chapters; native file drop zone in `UploadPage.jsx` is unaffected |
+| Task | MVP? | Detail |
+|---|---|---|
+| Branch consolidation | MVP | Merge v2 planning and architecture branches into a clean base |
+| PWA manifest | done | `public/manifest.json` + meta tags in `index.html` (done — see below) |
+| Compatibility check | MVP | Gate app on load; block if requirements not met |
+| Local/Server mode badge | post-MVP | Nothing server-side ships in MVP; add when server features land |
+| Remove itinerary UI | MVP | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
+| Remove dnd-kit | MVP | `package.json`, `EditablePhotoLayout.jsx` — removes drag-to-reorder within story chapters; native file drop zone in `UploadPage.jsx` is unaffected |
 
-### Phase 1 — Pipeline rebuild (Part 1)
+### Phase 1 — Pipeline rebuild (Part 1) **[MVP]**
 
-**PR 1A: Cheap pipeline stages**
+**PR 1A: Cheap pipeline stages** **[MVP]**
 - `stages/exif.js` — wraps Web Worker, returns PhotoData[]
 - `stages/dedup.js` — exact + perceptual hash; revokes blob URLs for rejects
 - `stages/cluster.js` — day strategy (default), time-gap strategy
 
-**PR 1B: Survey component + pipeline checkpoint**
+**PR 1B: Survey component + pipeline checkpoint** **[MVP — secondary]**
 - `SurveyModal.jsx` — 2–3 questions, timeout logic, skip option
 - Pipeline runner extended with checkpoint support (pause, wait for config, resume)
 - `usePipeline.js` hook — orchestrates Phase 1A → survey → Phase 1B
 
-**PR 1C: Expensive pipeline stages**
+**PR 1C: Expensive pipeline stages** **[MVP]**
 - `stages/thumbnail.js` — Web Worker, OffscreenCanvas, memory tracking
 - `stages/qualityScore.js` — blur detection (Laplacian variance on canvas, no ML)
 - `stages/heroSelect.js` — quality + survey weighting
 - `stages/chapterBuilder.js` — produces serialisable Story Skeleton
 
-**PR 1D: Memory manager**
+**PR 1D: Memory manager** **[MVP]**
 - `lib/memoryManager.js` — tracks blob URLs by stage, revokes on trigger
 - Integration into pipeline runner
 
-### Phase 2 — Story renderer (Part 2)
+### Phase 2 — Story renderer (Part 2) **[MVP]**
 
-**PR 2A: Part 2 data layer**
+> Primary quality focus for MVP: the renderer must produce output that is showable to others on mobile. This is the highest-care phase.
+
+**PR 2A: Part 2 data layer** **[MVP]**
 - `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story
 - Geocoding stage (Nominatim, progressive, 1 req/s, coord dedup)
 - Trip name generation
 - Block assembly
 
-**PR 2B: Renderer components**
+**PR 2B: Renderer components** **[MVP]**
 - `StoryView.jsx` — accepts Story prop (pure renderer, no pipeline awareness)
 - `Chapter.jsx` — block-based rendering
 - `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio); remove dnd-kit drag-to-reorder, keep layout rendering
 - Progressive geocoding: chapters update in place as locations resolve
 
-**PR 2C: Mode indicator + boundary notification**
+**PR 2C: Photo swap interaction** **[MVP — secondary]**
+- Each selected photo has a swap affordance (icon overlay on hover/tap)
+- Tapping swap opens a grid of 4–6 alternative candidates from the same chapter's pool
+- One tap selects the replacement; the story updates in place
+- Swap choices are recorded in the Story Skeleton (`meta.swapHistory`) as the first source of preference signal for the personalisation roadmap
+- Drag-to-reorder within a story remains out of scope
+
+**PR 2D: Mode indicator + boundary notification** **[post-MVP]**
 - `ModeBadge.jsx` — "Local mode" / "Server mode" badge, always visible in header
 - `ServerModeBoundaryModal.jsx` — one-time notification explaining what gets sent when first server feature is triggered
 - Triggered on: first geocoding request (if routed via server) or first caption generation
 
-### Phase 3 — Server enrichment (opt-in)
+### Phase 3 — Server enrichment (opt-in) **[post-MVP]**
 
 - Caption generation: send hero thumbnails + chapter metadata → Claude API proxy
 - Share: upload thumbnails + Story Skeleton → cloud storage → shareable URL
 - Server receives: thumbnails (400px) + Story Skeleton JSON. Never: original photos, File metadata, user identity (unless they create an account)
 
-### Phase 4 — ML selection (iterative)
+### Phase 4 — ML selection (iterative) **[post-MVP, except Laplacian blur]**
 
-| Model | Size | Purpose | Priority |
+| Model | Size | Purpose | MVP? |
 |---|---|---|---|
-| Laplacian blur | 0 | Blur detection (classical) | Phase 1C |
-| MediaPipe Face Detection | ~5MB | Face count per photo | After Phase 2 |
-| NIMA (TF.js) | ~15MB | Aesthetic quality score | After face detection |
-| MobileNet | ~5MB | Scene classification | Optional |
-| CLIP (Transformers.js) | ~150MB | Semantic embeddings, variety selection | Longer-term |
+| Laplacian blur | 0 | Blur detection (classical) | **MVP** — ships in Phase 1C |
+| MediaPipe Face Detection | ~5MB | Face count per photo | post-MVP |
+| NIMA (TF.js) | ~15MB | Aesthetic quality score | post-MVP |
+| MobileNet | ~5MB | Scene classification | post-MVP |
+| CLIP (Transformers.js) | ~150MB | Semantic embeddings, variety selection | longer-term |
 
 Service worker model caching: add alongside the first ML model that gets shipped. Do not add service worker earlier.
 
