@@ -1,0 +1,314 @@
+# PhotoStory — Implementation Plan v3
+
+This plan supersedes PLAN-v2.md and reflects the revised architecture from the system design review (April 2026).
+
+---
+
+## Core Architecture Decisions (from design review)
+
+| Decision | Detail |
+|---|---|
+| Two-part separation | Part 1 (Selection) is 100% offline, pure computation. Part 2 (Story) handles rendering + enrichment. |
+| Part 1 output | Serialisable Story JSON — embedded thumbnail data URLs, raw GPS coords, no geocoded labels |
+| Geocoding lives in Part 2 | Nominatim is a network call; turns raw coords into labels at render time, not selection time |
+| Two-phase pipeline | Phase 1A (cheap: EXIF, dedup, basic cluster) runs first; survey collects user preferences during this time; Phase 1B (expensive: ML scoring, hero select) runs after, informed by survey |
+| Memory management | Revoke blob URLs eagerly after each stage; track lifecycle explicitly |
+| PWA manifest now | Service worker deferred until first ML model is added |
+| Compatibility gate | Check before any processing; block low-end devices |
+| Mode indicator | "Local mode" / "Server mode" badge; one-time boundary notification on first server transition |
+
+---
+
+## Branch Consolidation (TODO — do before any new implementation)
+
+**Current state:**
+- `claude/photostory-v2-planning-p6C7s` — v2 planning docs, pipeline infra skeleton
+- `claude/review-system-architecture-305Gq` — architecture review notes (current)
+
+**Recommendation:** Both branches contain planning work only; neither is a shippable feature branch. Consolidate by:
+1. Merging both into a single clean branch (e.g. `photostory/main` or `main`)
+2. Treating all prior branches as superseded — the v3 plan replaces v2
+3. All future implementation work branches off the consolidated base
+
+**Action required from founder:** confirm branch naming convention and which branch to use as the base going forward.
+
+---
+
+## Data Model (revised)
+
+### Part 1 Output — Story Skeleton (serialisable)
+
+```js
+// Everything here must be JSON-serialisable (no File objects, no blob URLs)
+{
+  version: "1.0",
+  generatedAt: "2025-03-20T14:00:00Z",
+  photos: {
+    "photo_0": {
+      id: "photo_0",
+      name: "IMG_1234.jpg",
+      timestamp: "2025-03-15T08:30:00Z",  // from EXIF, or null
+      coords: { lat: 35.6762, lng: 139.6503 },  // raw EXIF GPS, or null
+      thumbnailDataUrl: "data:image/jpeg;base64,...",  // 400px, embedded
+      qualityScore: 0.82,    // 0–1, from ML scoring (null until ML added)
+      faces: 2,              // face count (null until face detection added)
+    },
+    ...
+  },
+  chapters: [
+    {
+      id: "chapter_001",
+      photoIds: ["photo_5", "photo_2", "photo_8"],  // selection, ordered
+      heroPhotoId: "photo_5",
+      date: "2025-03-15",
+      coords: { lat: 35.714, lng: 139.797 },  // median GPS of chapter, or null
+      // No title, no location label — those are Part 2 responsibilities
+    },
+    ...
+  ],
+  meta: {
+    totalPhotosInput: 847,
+    totalPhotosAfterDedup: 612,
+    totalChapters: 6,
+    dateRange: { start: "2025-03-15", end: "2025-03-20" },
+    surveyResponses: {  // stored for reproducibility and ML feedback
+      tripType: "leisure",
+      highlightDays: ["2025-03-17"],
+      keyPeople: ["person_cluster_2"],
+    },
+  }
+}
+```
+
+### Part 2 — Story (render-time, not serialised)
+
+```js
+{
+  skeleton: StorySkeleton,     // the Part 1 output
+  trip_name: "Japan, March 2025",  // generated from geocoding + date range
+  chapters: [
+    {
+      ...skeletonChapter,
+      title: "Day 1 — Asakusa",  // generated; overridable by user
+      userRenamed: false,
+      location: {
+        label: "Asakusa, Tokyo",
+        country: "Japan",
+      },
+      blocks: [
+        { type: "text", id: "blk_001", content: "" },
+        { type: "photos", id: "blk_002", photoIds: [...] },
+      ],
+    },
+    ...
+  ],
+}
+```
+
+---
+
+## Pipeline Design (revised)
+
+### Phase 1A — Cheap stages (run immediately, survey shown during this)
+
+```
+File[] input
+  │
+  ▼ [EXIF Extraction — Web Worker, batches of 50]
+  │   Output: PhotoData[] with timestamps + raw GPS
+  │   Blob URLs: created on main thread after worker returns
+  │   Memory note: File objects are lightweight handles; EXIF worker
+  │                reads bytes on demand, does not copy full image to RAM
+  │
+  ▼ [Deduplication — exact hash + perceptual hash]
+  │   Output: deduplicated PhotoData[]
+  │   Memory: blob URLs for rejected duplicates are REVOKED here
+  │
+  ▼ [Basic Clustering — day-based or time-gap]
+  │   Output: PhotoData[][] (grouped, ordered by date)
+  │   No network, no ML, no heavy computation
+  │
+  └──► Phase 1A complete → emit checkpoint event
+       → UI: survey has collected responses by now (or timeout)
+       → Resume Phase 1B with survey config
+```
+
+### Survey (parallel to Phase 1A)
+
+The survey is not a pipeline stage — it runs concurrently in the UI while Phase 1A processes.
+
+```
+UI thread (while Phase 1A runs in worker):
+  → Show 2–3 short questions:
+      "What kind of trip was this?"    [Leisure / Family / Adventure / Work]
+      "Any days that were special?"    [multi-select from dates found in EXIF]
+      "Who should appear most?"        [placeholder for future face selection]
+  → Collect responses into SurveyConfig object
+  → On Phase 1A checkpoint: merge SurveyConfig into pipeline config
+```
+
+**Timing contract:**
+- If Phase 1A finishes before the user completes the survey: wait (show "Almost ready — finish your answers to continue").
+- If user skips or survey times out (60s): proceed with defaults.
+- Survey responses stored in `meta.surveyResponses` for ML feedback loop.
+
+### Phase 1B — Expensive stages (runs after survey, informed by survey config)
+
+```
+  ▼ [Thumbnail Generation — Web Worker, OffscreenCanvas]
+  │   Output: thumbnailDataUrl embedded into each PhotoData
+  │   Memory: thumbnailDataUrl is ~30–50KB per photo (in RAM as string)
+  │   For 5,000 photos: up to 250MB. Monitor total and warn if >150MB available.
+  │
+  ▼ [Quality Scoring — ML, optional, browser WASM]
+  │   Output: qualityScore added to each PhotoData
+  │   Initial MVP: classical heuristics (blur detection, exposure)
+  │   Later: NIMA model via TF.js
+  │
+  ▼ [Hero Selection — informed by quality score + survey prefs]
+  │   Default: highest quality score in group
+  │   With survey: bias toward days user marked as highlights,
+  │                prefer photos with faces if user selected people
+  │
+  ▼ [Chapter Builder]
+  │   Output: Story Skeleton (serialisable, no File objects)
+  │   Memory: all File references dropped here; only thumbnailDataUrls remain
+```
+
+---
+
+## Memory Management
+
+| Stage | Action |
+|---|---|
+| File selection | `URL.createObjectURL(file)` for preview grid only — these are lightweight (disk-backed) |
+| After EXIF extraction | Revoke preview blob URLs for photos that fail dedup |
+| After dedup | Revoke blob URLs for all rejected duplicates immediately |
+| During thumbnail gen | OffscreenCanvas output is a Blob → `URL.createObjectURL(blob)` → convert to data URL → revoke blob URL |
+| After chapter build | Revoke blob URLs for all original File objects; only thumbnailDataUrls remain |
+| After Part 2 render | Only hero thumbnails are visible at full size; consider downscaling non-hero thumbnails further |
+
+**Estimated RAM at steady state (5,000 photos, after pipeline):**
+- Thumbnail data URLs: ~5,000 × 40KB = ~200MB (upper bound; most trips are 200–1,000 photos)
+- Chapter hero data URLs: subset of the above, already counted
+- No File bytes in RAM (all revoked)
+
+**Guard:** check `navigator.deviceMemory` before starting Phase 1B. If ≤2GB available (or device is flagged by compatibility check), offer to process in a reduced mode (fewer photos per batch, lower thumbnail resolution — 200px instead of 400px).
+
+---
+
+## Implementation Phases
+
+### Phase 0 — Foundation (do first, unblocks everything)
+
+| Task | Detail |
+|---|---|
+| Branch consolidation | Merge v2 planning and architecture branches into a clean base |
+| PWA manifest | `public/manifest.json` + meta tags in `index.html` (done — see below) |
+| Compatibility check | Gate app on load; block if requirements not met |
+| Local/Server mode badge | UI component; starts as "Local mode"; persists in header |
+| Remove itinerary UI | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
+| Remove dnd-kit | `package.json`, `EditablePhotoLayout.jsx` |
+
+### Phase 1 — Pipeline rebuild (Part 1)
+
+**PR 1A: Cheap pipeline stages**
+- `stages/exif.js` — wraps Web Worker, returns PhotoData[]
+- `stages/dedup.js` — exact + perceptual hash; revokes blob URLs for rejects
+- `stages/cluster.js` — day strategy (default), time-gap strategy
+
+**PR 1B: Survey component + pipeline checkpoint**
+- `SurveyModal.jsx` — 2–3 questions, timeout logic, skip option
+- Pipeline runner extended with checkpoint support (pause, wait for config, resume)
+- `usePipeline.js` hook — orchestrates Phase 1A → survey → Phase 1B
+
+**PR 1C: Expensive pipeline stages**
+- `stages/thumbnail.js` — Web Worker, OffscreenCanvas, memory tracking
+- `stages/qualityScore.js` — blur detection (Laplacian variance on canvas, no ML)
+- `stages/heroSelect.js` — quality + survey weighting
+- `stages/chapterBuilder.js` — produces serialisable Story Skeleton
+
+**PR 1D: Memory manager**
+- `lib/memoryManager.js` — tracks blob URLs by stage, revokes on trigger
+- Integration into pipeline runner
+
+### Phase 2 — Story renderer (Part 2)
+
+**PR 2A: Part 2 data layer**
+- `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story
+- Geocoding stage (Nominatim, progressive, 1 req/s, coord dedup)
+- Trip name generation
+- Block assembly
+
+**PR 2B: Renderer components**
+- `StoryView.jsx` — accepts Story prop (pure renderer, no pipeline awareness)
+- `Chapter.jsx` — block-based rendering
+- `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio), no dnd-kit
+- Progressive geocoding: chapters update in place as locations resolve
+
+**PR 2C: Mode indicator + boundary notification**
+- `ModeBadge.jsx` — "Local mode" / "Server mode" badge, always visible in header
+- `ServerModeBoundaryModal.jsx` — one-time notification explaining what gets sent when first server feature is triggered
+- Triggered on: first geocoding request (if routed via server) or first caption generation
+
+### Phase 3 — Server enrichment (opt-in)
+
+- Caption generation: send hero thumbnails + chapter metadata → Claude API proxy
+- Share: upload thumbnails + Story Skeleton → cloud storage → shareable URL
+- Server receives: thumbnails (400px) + Story Skeleton JSON. Never: original photos, File metadata, user identity (unless they create an account)
+
+### Phase 4 — ML selection (iterative)
+
+| Model | Size | Purpose | Priority |
+|---|---|---|---|
+| Laplacian blur | 0 | Blur detection (classical) | Phase 1C |
+| MediaPipe Face Detection | ~5MB | Face count per photo | After Phase 2 |
+| NIMA (TF.js) | ~15MB | Aesthetic quality score | After face detection |
+| MobileNet | ~5MB | Scene classification | Optional |
+| CLIP (Transformers.js) | ~150MB | Semantic embeddings, variety selection | Longer-term |
+
+Service worker model caching: add alongside the first ML model that gets shipped. Do not add service worker earlier.
+
+---
+
+## Compatibility Check
+
+Run on app initialisation, before any UI renders:
+
+```js
+const checks = {
+  webWorkers:    typeof Worker !== 'undefined',
+  offscreenCanvas: typeof OffscreenCanvas !== 'undefined',
+  minCores:      navigator.hardwareConcurrency >= 4,
+  // deviceMemory only available in Chrome/Edge (~85% of users)
+  minMemory:     !navigator.deviceMemory || navigator.deviceMemory >= 4,
+};
+
+const passed = Object.values(checks).every(Boolean);
+// If !passed: render CompatibilityBlock component, do not load pipeline
+```
+
+Show a clear message listing what failed. Do not attempt degraded processing — the UX would be worse than a clear rejection.
+
+---
+
+## PWA Strategy
+
+| When | What |
+|---|---|
+| Now | `manifest.json` (installability) + meta tags |
+| With first ML model | Service worker (app shell cache + model cache) |
+| Later | Background sync, file system access API |
+
+---
+
+## Risk Register
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Memory exhaustion on large collections | Medium | High | Memory manager, reduced mode for low-RAM devices |
+| Survey adds friction and users skip it | High | Medium | Keep to 2 questions max; 60s auto-timeout with sensible defaults |
+| ML model first-load latency (150MB CLIP) | High | Medium | Service worker cache; load lazily; show progress; offer "skip ML" path |
+| Nominatim rate limiting | Low | Low | Coord deduplication reduces to ~15 unique requests per trip |
+| Phase 1A finishes too fast for survey | Medium | Low | Survey min display time (e.g. 5s) even if processing is instant |
+| OffscreenCanvas not in older Safari | Low | Low | Compatibility gate blocks these users clearly |
