@@ -208,7 +208,7 @@ UI thread (while Phase 1A runs in worker):
 | Compatibility check | Gate app on load; block if requirements not met |
 | Local/Server mode badge | UI component; starts as "Local mode"; persists in header |
 | Remove itinerary UI | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
-| Remove dnd-kit | `package.json`, `EditablePhotoLayout.jsx` |
+| Remove dnd-kit | `package.json`, `EditablePhotoLayout.jsx` — removes drag-to-reorder within story chapters; native file drop zone in `UploadPage.jsx` is unaffected |
 
 ### Phase 1 — Pipeline rebuild (Part 1)
 
@@ -243,7 +243,7 @@ UI thread (while Phase 1A runs in worker):
 **PR 2B: Renderer components**
 - `StoryView.jsx` — accepts Story prop (pure renderer, no pipeline awareness)
 - `Chapter.jsx` — block-based rendering
-- `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio), no dnd-kit
+- `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio); remove dnd-kit drag-to-reorder, keep layout rendering
 - Progressive geocoding: chapters update in place as locations resolve
 
 **PR 2C: Mode indicator + boundary notification**
