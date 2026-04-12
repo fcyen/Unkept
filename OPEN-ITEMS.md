@@ -22,21 +22,23 @@ EXIF extraction works for HEIC on all platforms (`exifr` parses binary structure
 
 ---
 
-## 2. Memory Pressure and Performance on Mobile
+## 2. Memory Pressure and Performance on Mobile — CLOSED
 
-**Blocks:** PR 1C (thumbnail generation), overall pipeline strategy
+**Decision:** inverted pipeline order + two-tier thumbnails resolves both concerns.
 
-The primary device is mobile. Two concerns:
+**Root cause fix — invert the pipeline:**
+Generate thumbnails *after* chapter builder has selected which photos appear in the story, not before. This means thumbnails are only generated for selected photos (~120 for a typical 500-photo trip), not all photos.
 
-- **Memory:** storing thumbnail data URLs as strings in RAM (~40KB × N photos) works on desktop but iOS Safari reclaims memory aggressively under pressure. 2,000 photos = ~80MB of thumbnail strings alone.
-- **Performance:** Phase 1B (thumbnail generation, quality scoring) on a mid-range mobile browser without GPU acceleration could take several minutes, making the app feel broken.
+**Two thumbnail tiers:**
+- **Ephemeral 16px micro-canvas** (perceptual hash only) — computed in worker, discarded immediately, never stored
+- **200px JPEG** — all selected photos; serves quality scoring, all planned ML models (NIMA/face/CLIP all work on 200px input), and mobile rendering
+- **400px JPEG** — hero photos on desktop only (large featured image per chapter)
 
-**Decision needed:**
-- What is the acceptable processing time ceiling for 500 photos on mobile?
-- Should thumbnails be stored in IndexedDB rather than in-memory data URLs, trading speed for lower peak RAM?
-- Should we target a lower thumbnail resolution on mobile (200px vs 400px) to cut memory use in half?
+**Estimated RAM at steady state:** ~1.7MB for a typical trip — memory is no longer a concern.
 
-**Investigation required before PR 1C:** benchmark thumbnail generation and memory usage on a real mid-range iPhone (e.g. iPhone 12 or equivalent) with 200 and 500 photos.
+**No IndexedDB in MVP** — not needed with this approach.
+
+**Remaining investigation (pre-PR 1C, not a blocker):** benchmark `createImageBitmap()` throughput on a mid-range iPhone for ~120 files at 200px to confirm processing time is acceptable (~5s target).
 
 ---
 

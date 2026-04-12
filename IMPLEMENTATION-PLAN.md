@@ -34,9 +34,11 @@ This plan reflects the revised architecture from the system design review (April
       name: "IMG_1234.jpg",
       timestamp: "2025-03-15T08:30:00Z",  // from EXIF, or null
       coords: { lat: 35.6762, lng: 139.6503 },  // raw EXIF GPS, or null
-      thumbnailDataUrl: "data:image/jpeg;base64,...",  // 400px, embedded
-      qualityScore: 0.82,    // 0–1, from ML scoring (null until ML added)
-      faces: 2,              // face count (null until face detection added)
+      thumbnailUrl: "data:image/jpeg;base64,...",      // 200px, all selected photos
+      thumbnailHeroUrl: "data:image/jpeg;base64,...",  // 400px, hero photos on desktop only (null on mobile)
+      thumbnailFailed: false,                          // true if HEIC decode failed
+      qualityScore: 0.82,    // 0–1, from blur detection on 200px thumbnail (null until scored)
+      faces: 2,              // face count (null until face detection added, post-MVP)
       // note: iOS/Google favourite flags are not accessible from exported files — omitted
     },
     ...
@@ -102,17 +104,18 @@ File[] input
   │
   ▼ [EXIF Extraction — Web Worker, batches of 50]
   │   Output: PhotoData[] with timestamps + raw GPS
-  │   Blob URLs: created on main thread after worker returns
-  │   Memory note: File objects are lightweight handles; EXIF worker
-  │                reads bytes on demand, does not copy full image to RAM
+  │   Memory: File objects are lightweight handles; bytes read on demand
   │
   ▼ [Deduplication — exact hash + perceptual hash]
+  │   Exact hash: first/last 64KB + file size (no image decoding)
+  │   Perceptual hash: ephemeral 16px canvas in worker — computed and
+  │                    discarded immediately, never stored
   │   Output: deduplicated PhotoData[]
-  │   Memory: blob URLs for rejected duplicates are REVOKED here
+  │   Memory: blob URLs for rejected duplicates REVOKED here
   │
   ▼ [Basic Clustering — day-based or time-gap]
+  │   Timestamp + GPS only — no pixel data needed
   │   Output: PhotoData[][] (grouped, ordered by date)
-  │   No network, no ML, no heavy computation
   │
   └──► Phase 1A complete → emit checkpoint event
        → UI: survey has collected responses by now (or timeout)
@@ -143,24 +146,31 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 ### Phase 1B — Expensive stages (runs after survey, informed by survey config)
 
 ```
-  ▼ [Thumbnail Generation — Web Worker, OffscreenCanvas]
-  │   Output: thumbnailDataUrl embedded into each PhotoData
-  │   Memory: thumbnailDataUrl is ~30–50KB per photo (in RAM as string)
-  │   For 5,000 photos: up to 250MB. Monitor total and warn if >150MB available.
-  │
-  ▼ [Quality Scoring — ML, optional, browser WASM]
-  │   Output: qualityScore added to each PhotoData
-  │   Initial MVP: classical heuristics (blur detection, exposure)
-  │   Later: NIMA model via TF.js
-  │
-  ▼ [Hero Selection — informed by quality score + survey prefs]
-  │   Default: highest quality score in group
-  │   With survey: bias toward days user marked as highlights,
-  │                prefer photos with faces if user selected people
+  ▼ [Hero Selection — informed by survey prefs]
+  │   MVP: middle photo per cluster, boosted for survey-selected dates
+  │   Post-MVP: quality score weighted
   │
   ▼ [Chapter Builder]
-  │   Output: Story Skeleton (serialisable, no File objects)
-  │   Memory: all File references dropped here; only thumbnailDataUrls remain
+  │   Selects which photos appear in the story
+  │   Output: chapter structure with photoIds and heroPhotoId
+  │   At this point we know exactly which photos need thumbnails
+  │
+  ▼ [Thumbnail Generation — Web Worker, OffscreenCanvas]
+  │   Only processes SELECTED photos (those in chapters)
+  │   Two tiers:
+  │     200px JPEG — all selected photos (quality scoring, ML, mobile render)
+  │     400px JPEG — hero photos on desktop only (large featured image)
+  │   HEIC: attempt createImageBitmap(); on failure mark thumbnailFailed,
+  │         continue pipeline, surface count to UI
+  │   Memory: ~120 selected × 12KB + ~6 heroes × 40KB ≈ 1.7MB typical trip
+  │
+  ▼ [Quality Scoring — blur detection on 200px thumbnails]
+  │   Laplacian variance on canvas — no ML model needed
+  │   Output: qualityScore (0–1) added to each selected PhotoData
+  │   Later: NIMA, face detection, CLIP all work on 200px input
+  │
+  └──► Output: Story Skeleton (serialisable, no File objects or blob URLs)
+       Memory: all File references and blob URLs REVOKED here
 ```
 
 ---
@@ -169,19 +179,25 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 
 | Stage | Action |
 |---|---|
-| File selection | `URL.createObjectURL(file)` for preview grid only — these are lightweight (disk-backed) |
-| After EXIF extraction | Revoke preview blob URLs for photos that fail dedup |
-| After dedup | Revoke blob URLs for all rejected duplicates immediately |
-| During thumbnail gen | OffscreenCanvas output is a Blob → `URL.createObjectURL(blob)` → convert to data URL → revoke blob URL |
-| After chapter build | Revoke blob URLs for all original File objects; only thumbnailDataUrls remain |
-| After Part 2 render | Only hero thumbnails are visible at full size; consider downscaling non-hero thumbnails further |
+| File selection | `URL.createObjectURL(file)` for preview grid only — disk-backed, lightweight |
+| Perceptual hash | Ephemeral 16px canvas in worker — computed and immediately discarded |
+| After dedup | Revoke blob URLs for all rejected photos immediately |
+| Thumbnail generation | Only selected photos; OffscreenCanvas Blob → data URL → revoke Blob URL |
+| After chapter build | Revoke blob URLs for all original File objects |
 
-**Estimated RAM at steady state (5,000 photos, after pipeline):**
-- Thumbnail data URLs: ~5,000 × 40KB = ~200MB (upper bound; most trips are 200–1,000 photos)
-- Chapter hero data URLs: subset of the above, already counted
-- No File bytes in RAM (all revoked)
+**Thumbnail tiers:**
+| Tier | Resolution | Size | Used for |
+|---|---|---|---|
+| Ephemeral micro | 16px | discarded | Perceptual hash only |
+| Standard | 200px | ~12KB | Quality scoring, all ML models, mobile render, desktop non-hero |
+| Hero (desktop) | 400px | ~40KB | Large featured image per chapter on desktop |
 
-**Guard:** check `navigator.deviceMemory` before starting Phase 1B. If ≤2GB available (or device is flagged by compatibility check), offer to process in a reduced mode (fewer photos per batch, lower thumbnail resolution — 200px instead of 400px).
+**Estimated RAM at steady state (typical 500-photo trip, ~120 selected):**
+- 120 selected × 12KB (200px) = ~1.4MB
+- 6 heroes × 40KB (400px, desktop) = ~240KB
+- **Total: ~1.7MB** — memory is no longer a concern at typical trip sizes
+
+**Adaptive resolution detection:** `navigator.userAgentData.mobile` with `window.innerWidth < 768` as fallback. Mobile devices receive 200px thumbnails only; no 400px tier generated.
 
 ---
 
@@ -216,10 +232,10 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - `usePipeline.js` hook — orchestrates Phase 1A → survey → Phase 1B
 
 **PR 1C: Expensive pipeline stages** **[MVP]**
-- `stages/thumbnail.js` — Web Worker, OffscreenCanvas, memory tracking
-- `stages/qualityScore.js` — blur detection (Laplacian variance on canvas, no ML)
-- `stages/heroSelect.js` — quality + survey weighting
-- `stages/chapterBuilder.js` — produces serialisable Story Skeleton
+- `stages/heroSelect.js` — survey-weighted selection (runs before thumbnail gen)
+- `stages/chapterBuilder.js` — selects which photos appear in story; output drives thumbnail generation
+- `stages/thumbnail.js` — Web Worker, OffscreenCanvas; selected photos only; 200px standard + 400px hero (desktop); HEIC graceful degradation
+- `stages/qualityScore.js` — blur detection (Laplacian variance) on 200px thumbnails
 - `lib/validateSkeleton.js` — `isValidSkeleton(json)` schema validator; used in tests and in dev-mode runtime assertions
 - `stages/chapterBuilder.test.js` — output passes `isValidSkeleton`; all chapters have a heroPhotoId; no File objects or blob URLs in output
 
