@@ -188,12 +188,13 @@ UI thread (while Phase 1A runs in worker):
 
 | Task | MVP? | Detail |
 |---|---|---|
-| Branch consolidation | MVP | Merge v2 planning and architecture branches into a clean base |
-| PWA manifest | done | `public/manifest.json` + meta tags in `index.html` (done — see below) |
+| Branch consolidation | done | Consolidated to `main` |
+| PWA manifest | done | `public/manifest.json` + meta tags in `index.html` |
 | Compatibility check | MVP | Gate app on load; block if requirements not met |
 | Local/Server mode badge | post-MVP | Nothing server-side ships in MVP; add when server features land |
 | Remove itinerary UI | MVP | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
 | Remove dnd-kit | MVP | `package.json`, `EditablePhotoLayout.jsx` — removes drag-to-reorder within story chapters; native file drop zone in `UploadPage.jsx` is unaffected |
+| Dev route + fixture scenarios | MVP | `/dev` route renders all 3 test scenarios simultaneously (see Testing section) |
 
 ### Phase 1 — Pipeline rebuild (Part 1) **[MVP]**
 
@@ -293,6 +294,48 @@ Show a clear message listing what failed. Do not attempt degraded processing —
 | Now | `manifest.json` (installability) + meta tags |
 | With first ML model | Service worker (app shell cache + model cache) |
 | Later | Background sync, file system access API |
+
+---
+
+## Testing Strategy
+
+### Manual testing
+
+**Two things to test separately:** selection quality (did the algorithm pick well?) and story UI (does it look good?).
+
+#### Pipeline debug overlay
+
+Gate behind `?debug=1`. Adds a panel below the story showing per-photo pipeline decisions:
+
+```
+[thumbnail]  cluster: Day 2  |  hero: ✓  |  dedup: kept    |  quality: 0.82
+[thumbnail]  cluster: Day 2  |  hero: –  |  dedup: kept    |  quality: 0.61
+[thumbnail]  cluster: Day 1  |  hero: –  |  dedup: REJECT  |  reason: hamming 3
+```
+
+This turns selection quality from a gut-feel evaluation into something readable at a glance.
+
+#### Dev route — `/dev`
+
+A developer-only route that renders all three fixture test scenarios simultaneously, without any file upload. Because `StoryView` is a pure renderer that accepts a Story Skeleton, fixture skeletons can be hardcoded JSON fed directly to the renderer — no pipeline run, no drag-and-drop, instant load.
+
+| Scenario | Chapters | Photos | What it stress-tests |
+|---|---|---|---|
+| Short trip | 3 days | ~30 photos | Minimal chapters, basic layouts |
+| Long trip | 10 days | ~200 photos | TOC, many chapters, long location names, geocoding |
+| Edge case | 1 day | Mixed portrait/landscape, some chapters with 1 photo | Layout robustness, single-photo chapters |
+
+Fixture thumbnails use tiny placeholder data URLs (real images not required for layout testing). Metadata — timestamps, GPS coords, photo counts — is realistic. Add the `/dev` route in Phase 0 alongside the pipeline work; it will pay back time on every subsequent UI change.
+
+#### Fixture photo library
+
+A small folder (`fixtures/`) of real photos (~50) with known properties for pipeline testing:
+- Exact duplicate pair
+- Near-duplicate burst (4–5 shots, hamming ≤ 5)
+- One blurry / one sharp version of the same scene
+- Photos with no EXIF timestamps
+- Photos with no GPS data
+- Photos spanning 3+ calendar days
 
 ---
 
