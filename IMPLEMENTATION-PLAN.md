@@ -195,6 +195,7 @@ UI thread (while Phase 1A runs in worker):
 | Remove itinerary UI | MVP | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
 | Remove dnd-kit | MVP | `package.json`, `EditablePhotoLayout.jsx` — removes drag-to-reorder within story chapters; native file drop zone in `UploadPage.jsx` is unaffected |
 | Dev route + fixture scenarios | MVP | `/dev` route renders all 3 test scenarios simultaneously (see Testing section) |
+| Vitest setup | MVP | `npm install -D vitest`; add `"test": "vitest run"` script; no further config needed |
 
 ### Phase 1 — Pipeline rebuild (Part 1) **[MVP]**
 
@@ -202,6 +203,8 @@ UI thread (while Phase 1A runs in worker):
 - `stages/exif.js` — wraps Web Worker, returns PhotoData[]
 - `stages/dedup.js` — exact + perceptual hash; revokes blob URLs for rejects
 - `stages/cluster.js` — day strategy (default), time-gap strategy
+- `stages/dedup.test.js` — exact hash collision; near-duplicate within hamming threshold removed; photos outside threshold kept; empty input
+- `stages/cluster.test.js` — correct grouping by date; no-timestamp photos land in undated group; single-photo day forms its own chapter; unsorted input produces same output as sorted
 
 **PR 1B: Survey component + pipeline checkpoint** **[MVP — secondary]**
 - `SurveyModal.jsx` — 2–3 questions, timeout logic, skip option
@@ -213,6 +216,8 @@ UI thread (while Phase 1A runs in worker):
 - `stages/qualityScore.js` — blur detection (Laplacian variance on canvas, no ML)
 - `stages/heroSelect.js` — quality + survey weighting
 - `stages/chapterBuilder.js` — produces serialisable Story Skeleton
+- `lib/validateSkeleton.js` — `isValidSkeleton(json)` schema validator; used in tests and in dev-mode runtime assertions
+- `stages/chapterBuilder.test.js` — output passes `isValidSkeleton`; all chapters have a heroPhotoId; no File objects or blob URLs in output
 
 **PR 1D: Memory manager** **[MVP]**
 - `lib/memoryManager.js` — tracks blob URLs by stage, revokes on trigger
