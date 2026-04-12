@@ -299,6 +299,44 @@ Show a clear message listing what failed. Do not attempt degraded processing —
 
 ## Testing Strategy
 
+### Automated tests (Vitest)
+
+Install once at the start: `npm install -D vitest`, add `"test": "vitest run"` to `package.json`.
+
+#### What to test
+
+**`dedup.js` and `cluster.js` — unit tests, written alongside each stage.**
+Both are pure, deterministic functions with clear contracts. Test these:
+
+- `dedup`: exact hash collision removes duplicate; near-duplicate within hamming threshold removed; photos outside threshold kept; empty input handled
+- `cluster`: photos group correctly by calendar date; photos with no timestamp land in undated group; single-photo day forms its own chapter; photos already sorted vs. unsorted produce the same output
+
+**Story Skeleton schema — enforce via `isValidSkeleton(json)` validator.**
+`chapterBuilder` correctness is validated structurally: the output either satisfies the schema or it doesn't. No separate behaviour tests for the builder itself.
+
+#### What to skip
+
+| Stage | Reason |
+|---|---|
+| `heroSelect.js` | TBD — deterministic in current form (middle photo), but lightweight enough to revisit |
+| `qualityScore.js` | Results are ambiguous; no meaningful assertion possible |
+| `runner.js` | Chaining logic is simple; cost of maintaining tests > benefit |
+| React components | Layout quality is visual; snapshot tests catch nothing useful |
+| Workers | Too much setup; logic belongs in the stage, not the wrapper |
+| Geocoding | External network dependency |
+
+#### ML stage testing strategy (for when ML models are introduced)
+
+Do not test model accuracy with unit tests — that is a model evaluation problem, not a software correctness problem. Test structural and boundary behaviour only:
+
+- Output shape is correct (score in 0–1 range, required fields present)
+- Stage handles edge inputs without throwing (zero photos, photos with no pixel data)
+- Directional assertions with evaluation fixtures: a known-blurry photo scores lower than its known-sharp counterpart
+
+Keep a small labelled fixture set (a handful of known-good / known-bad photos) for this purpose. Run it manually when a model or scoring stage changes, not on every commit.
+
+---
+
 ### Manual testing
 
 **Two things to test separately:** selection quality (did the algorithm pick well?) and story UI (does it look good?).
