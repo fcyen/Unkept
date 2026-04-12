@@ -37,33 +37,22 @@ The primary device is mobile. Two concerns:
 
 ---
 
-## 3. Favourite Photo Metadata as Selection Signal
+## 3. Favourite Photo Metadata as Selection Signal — CLOSED
 
-**Blocks:** heroSelect strategy design, Story Skeleton schema
+**Decision:** do not include in the data model.
 
-Modern phones mark photos as "favourited" by the user (iOS Heart, Google Photos star). This metadata may be embedded in EXIF or sidecar files. If reliably readable, it is a strong zero-effort signal for hero selection — the user has already told the phone which photos matter most.
-
-**Decision needed:**
-- Does `exifr` expose iOS/Google favourite flags?
-- How do we weight a favourited photo vs. quality score vs. survey highlight day?
-- Should `favourited: bool` be a first-class field in the PhotoData model?
+iOS "Heart" and Google Photos star status are stored in each platform's database, not embedded in the photo file on export. The browser file picker only receives raw image bytes and standard EXIF — the favourite flag is inaccessible. The XMP `Rating` field (written by DSLRs and Lightroom) is readable via `exifr` but covers a minority professional workflow, not the primary iPhone user. Add only if it becomes a concrete user request.
 
 ---
 
-## 4. "Favourite Moment" Survey Question + Agent Interpretation
+## 4. Survey MVP Question — CLOSED
 
-**Blocks:** survey design (PR 1B), Phase 5A agent design
+**Decision:** one question — "Which day was your favourite?" — multi-select of actual dates extracted from EXIF during Phase 1A. Optional and skippable. Hidden if only one date is found.
 
-The survey currently asks "Any days that were special?" as a multi-select over dates. A richer alternative: ask "What was your favourite moment of the trip?" as free text, then use an LLM agent to map the answer to specific photos and chapters.
+**Pipeline behaviour:** photos from the selected date(s) receive a boosted weight in heroSelect. That chapter is treated as the narrative anchor of the story.
 
-**Two-tier approach:**
-- **MVP (PR 1B):** structured question only — prompted pick from chapter list, immediately actionable for pipeline weighting, no LLM required
-- **Post-MVP (PR 5A):** accept free text ("the morning we hiked to the waterfall"), interpret via agent with tools (`search_chapters_by_date`, `search_chapters_by_location`, `get_photo_metadata`), return structured selection weights
+**Why this question over the alternatives:**
+- "What kind of trip was this?" — no algorithm can act on it in MVP; pure data collection
+- "Who should appear most?" — requires face detection, which is post-MVP
 
-The free-text path is also a core learning exercise: using an LLM as a translator between natural language intent and structured pipeline config.
-
-Open questions:
-- What is the single best structured MVP question? Options: "Which day was your favourite?" (date picker), "What kind of trip was this?" (trip type), "Who should appear most?" (placeholder for face detection)
-- How does the free-text agent interact with the favourited photo metadata signal (item 3 above)?
-
-**Decision needed before PR 1B:** confirm the 1 MVP question and what pipeline behaviour it drives.
+**Post-MVP (PR 5A):** add free-text input ("the morning we hiked to the waterfall") interpreted by an LLM agent with tools to search chapters by date and location, returning structured selection weights. This is also the primary agent orchestration learning exercise.

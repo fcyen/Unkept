@@ -37,6 +37,7 @@ This plan reflects the revised architecture from the system design review (April
       thumbnailDataUrl: "data:image/jpeg;base64,...",  // 400px, embedded
       qualityScore: 0.82,    // 0–1, from ML scoring (null until ML added)
       faces: 2,              // face count (null until face detection added)
+      // note: iOS/Google favourite flags are not accessible from exported files — omitted
     },
     ...
   },
@@ -124,12 +125,14 @@ The survey is not a pipeline stage — it runs concurrently in the UI while Phas
 
 ```
 UI thread (while Phase 1A runs in worker):
-  → Show 2–3 short questions:
-      "What kind of trip was this?"    [Leisure / Family / Adventure / Work]
-      "Any days that were special?"    [multi-select from dates found in EXIF]
-      "Who should appear most?"        [placeholder for future face selection]
-  → Collect responses into SurveyConfig object
+  → Show 1 question (MVP):
+      "Which day was your favourite?"  [multi-select from dates found in EXIF]
+      — Hidden if only one date is found (single-day trip)
+      — Optional; skippable; 60s timeout proceeds with no selection
+  → Collect response into SurveyConfig object
   → On Phase 1A checkpoint: merge SurveyConfig into pipeline config
+
+Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 ```
 
 **Timing contract:**
