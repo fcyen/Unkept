@@ -7,22 +7,20 @@
  *   3. Reference it in the pipeline config: { cluster: { strategy: "day" } }
  */
 
-// Strategies will be registered as pipeline stages are implemented.
-// Each entry maps a strategy name to its function.
-//
-// Example (filled in by subsequent PRs):
-//   import { clusterByDay } from './stages/cluster.js';
-//   import { selectMiddle } from './stages/heroSelect.js';
+import { clusterByDay, clusterByTimeGap } from './stages/cluster.js';
+import { dedupStage } from './stages/dedup.js';
+import { heroSelectStage } from './stages/heroSelect.js';
 
 const strategies = {
   cluster: {
-    // day: clusterByDay,
+    day: clusterByDay,
+    timeGap: clusterByTimeGap,
   },
   heroSelect: {
-    // middle: selectMiddle,
+    default: heroSelectStage,
   },
   dedup: {
-    // default: dedup,
+    default: dedupStage,
   },
 };
 
