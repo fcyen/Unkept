@@ -12,8 +12,8 @@
 <body>
   <h2>HEIC createImageBitmap() Failure Test</h2>
   <p>Select a .heic file to test whether failure is catchable.</p>
-  <input type="file" id="picker" accept=".heic,.heif">
-  <pre id="log"></pre>
+  <input type="file" id="picker" accept="image/*,.heic,.heif">
+  <pre id="log">Waiting for file selection...</pre>
 
   <script>
     const log = document.getElementById('log');
