@@ -35,11 +35,19 @@ Privacy-first web app that turns photo collections into editorial stories. All s
 - Compatibility gate runs before any pipeline code loads
 
 ## Learning intent
-This is a learning project for AI-powered application development. When implementing AI features, prioritise understanding over convenience:
+This project has two learning goals: AI-powered application development, and editorial design.
+
+**AI:** prioritise understanding over convenience:
 - Use the raw Anthropic SDK before reaching for higher-level frameworks
 - Implement simple versions (heuristics, classical CV) before ML equivalents — the contrast is the lesson
 - Prefer approaches that make AI decisions visible (debug overlay, logging) over black-box integrations
 - After each phase, reflect on what the AI technique contributed that the previous approach could not
+
+**Design:** Phase 2 (story renderer) is the primary design learning surface:
+- Before each renderer PR, study 2–3 editorial references (magazine layouts, photo essays)
+- Form a clear design intent before writing any code
+- Iterate using the `/dev` route — instant visual feedback across all 3 fixture scenarios
+- Design skills in scope: typographic hierarchy, photo layout and grid, whitespace, visual flow, mobile-first responsive design, subtle motion
 
 ## Branch
 Develop on `main`. Feature branches off `main`, merged back via PR.

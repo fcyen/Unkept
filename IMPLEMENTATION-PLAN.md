@@ -226,6 +226,10 @@ UI thread (while Phase 1A runs in worker):
 ### Phase 2 — Story renderer (Part 2) **[MVP]**
 
 > Primary quality focus for MVP: the renderer must produce output that is showable to others on mobile. This is the highest-care phase.
+>
+> **Design learning goal:** Phase 2 is the primary opportunity to develop editorial design skills alongside engineering. Before each PR, study 2–3 reference layouts (magazine spreads, Exposure.so photo essays, editorial blogs), form a clear design intent, then implement and iterate using the `/dev` route. The learning is in the gap between intended and actual — iterate until they match.
+>
+> Design skills this phase exercises: typographic hierarchy, photo layout and grid, whitespace and pacing, visual flow, mobile-first responsive adaptation, subtle motion.
 
 **PR 2A: Part 2 data layer** **[MVP]**
 - `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story
@@ -238,6 +242,7 @@ UI thread (while Phase 1A runs in worker):
 - `Chapter.jsx` — block-based rendering
 - `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio); remove dnd-kit drag-to-reorder, keep layout rendering
 - Progressive geocoding: chapters update in place as locations resolve
+- Design focus: typographic scale and hierarchy; chapter pacing and whitespace; cover page composition; photo layout variety. Study editorial references before implementing. Iterate using `/dev` route — all 3 fixture scenarios visible instantly without uploading photos.
 
 **PR 2C: Photo swap interaction** **[MVP — secondary]**
 - Each selected photo has a swap affordance (icon overlay on hover/tap)
