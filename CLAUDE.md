@@ -34,6 +34,13 @@ Privacy-first web app that turns photo collections into editorial stories. All s
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
 
+## Learning intent
+This is a learning project for AI-powered application development. When implementing AI features, prioritise understanding over convenience:
+- Use the raw Anthropic SDK before reaching for higher-level frameworks
+- Implement simple versions (heuristics, classical CV) before ML equivalents — the contrast is the lesson
+- Prefer approaches that make AI decisions visible (debug overlay, logging) over black-box integrations
+- After each phase, reflect on what the AI technique contributed that the previous approach could not
+
 ## Branch
 Develop on `main`. Feature branches off `main`, merged back via PR.
 

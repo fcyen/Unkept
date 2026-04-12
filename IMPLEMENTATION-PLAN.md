@@ -251,15 +251,37 @@ UI thread (while Phase 1A runs in worker):
 - `ServerModeBoundaryModal.jsx` — one-time notification explaining what gets sent when first server feature is triggered
 - Triggered on: first geocoding request (if routed via server) or first caption generation
 
-### Phase 3 — Server enrichment (opt-in) **[post-MVP]**
+### Phase 3 — LLM integration (opt-in) **[post-MVP]**
 
-- Caption generation: send hero thumbnails + chapter metadata → Claude API proxy
-- Share: upload thumbnails + Story Skeleton → cloud storage → shareable URL
-- Server receives: thumbnails (400px) + Story Skeleton JSON. Never: original photos, File metadata, user identity (unless they create an account)
+> Learning focus: LLM API fundamentals → tool use → agentic reasoning.
+> Work through these in order — each step builds on the last.
 
-### Phase 4 — ML selection (iterative) **[post-MVP, except Laplacian blur]**
+**PR 3A: Caption generation — raw API**
+- Server-side Claude API proxy (thumbnails never sent from browser directly)
+- Anthropic SDK: messages, prompt caching (same system prompt per story = significant token savings), streaming
+- Simple call: send hero thumbnail + chapter metadata → receive caption
+- Vercel AI SDK on the client for streaming caption display in React
 
-| Model | Size | Purpose | MVP? |
+**PR 3B: Agentic caption generation — tool use**
+- Redesign caption generation as an agent with tools:
+  - `get_chapter_photos(chapterId)` — full photo list with timestamps
+  - `get_location_context(coords)` — place name, region, country
+  - `get_adjacent_chapters()` — narrative context (what came before and after)
+  - `get_trip_overview()` — duration, countries, total photos
+- Agent gathers context across tools before writing; captions gain narrative continuity
+- Core learning: designing tool interfaces, reasoning about how the model uses them
+
+**PR 3C: Story narrative agent**
+- Agent reads the full Story Skeleton and generates: cover introduction, evocative trip title, emotional arc summary
+- Multi-step reasoning over structured context
+- Core learning: prompt chaining, context management across a long document
+
+**PR 3D: Share**
+- Upload thumbnails + Story Skeleton → cloud storage → shareable URL
+
+### Phase 4 — On-device ML (iterative) **[post-MVP, except Laplacian blur]**
+
+| Model | Size | Purpose | When |
 |---|---|---|---|
 | Laplacian blur | 0 | Blur detection (classical) | **MVP** — ships in Phase 1C |
 | MediaPipe Face Detection | ~5MB | Face count per photo | post-MVP |
@@ -268,6 +290,31 @@ UI thread (while Phase 1A runs in worker):
 | CLIP (Transformers.js) | ~150MB | Semantic embeddings, variety selection | longer-term |
 
 Service worker model caching: add alongside the first ML model that gets shipped. Do not add service worker earlier.
+
+### Phase 5 — Agent orchestration + preference learning **[post-MVP]**
+
+**PR 5A: Free-text survey interpretation agent**
+- User types "our best day was when we hiked to the waterfall" in the survey
+- Agent uses tools to search chapters by date, location, and time of day, then returns structured selection weights
+- Core learning: LLM as a translator between natural language intent and structured pipeline config
+- Framework: Claude Agent SDK if coordination between search tools becomes complex
+
+**PR 5B: Preference learning from swap history**
+- `meta.swapHistory` (recorded since MVP) is the training signal
+- Lightweight user model: given past swaps, predict which photos the user would swap next
+- Feeds back into heroSelect weighting for future stories
+- Core learning: feedback loops, the difference between rule-based and learned selection
+
+**LLM framework progression:**
+
+| Phase | Tool | What you learn |
+|---|---|---|
+| 3A | Anthropic SDK directly | API primitives: messages, tool_use, prompt caching |
+| 3B | Anthropic SDK (tool_use) | Designing tool interfaces; agentic reasoning |
+| 3A–3C | Vercel AI SDK | Streaming LLM responses into React |
+| 5A | Claude Agent SDK | Multi-agent coordination, agent-to-agent communication |
+
+Avoid LangChain and LlamaIndex — their abstractions obscure what is actually happening. Learn the raw SDK first; frameworks make sense once you understand what they are abstracting.
 
 ---
 

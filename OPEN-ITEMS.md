@@ -50,15 +50,20 @@ Modern phones mark photos as "favourited" by the user (iOS Heart, Google Photos 
 
 ---
 
-## 4. "Favourite Moment" Survey Question
+## 4. "Favourite Moment" Survey Question + Agent Interpretation
 
-**Blocks:** survey design (PR 1B), pipeline checkpoint config
+**Blocks:** survey design (PR 1B), Phase 5A agent design
 
-The survey currently asks "Any days that were special?" as a multi-select over dates. An alternative: ask "What was your favourite moment of the trip?" as a free-text or prompted answer, then use that to weight the selection.
+The survey currently asks "Any days that were special?" as a multi-select over dates. A richer alternative: ask "What was your favourite moment of the trip?" as free text, then use an LLM agent to map the answer to specific photos and chapters.
+
+**Two-tier approach:**
+- **MVP (PR 1B):** structured question only — prompted pick from chapter list, immediately actionable for pipeline weighting, no LLM required
+- **Post-MVP (PR 5A):** accept free text ("the morning we hiked to the waterfall"), interpret via agent with tools (`search_chapters_by_date`, `search_chapters_by_location`, `get_photo_metadata`), return structured selection weights
+
+The free-text path is also a core learning exercise: using an LLM as a translator between natural language intent and structured pipeline config.
 
 Open questions:
-- Free text requires NLP to be actionable — is that in scope (server-side, post-MVP)?
-- A prompted version ("Pick one chapter title that best captures your favourite moment") is simpler and immediately usable in MVP weighting
-- How does this interact with the favourited photo metadata signal above?
+- What is the single best structured MVP question? Options: "Which day was your favourite?" (date picker), "What kind of trip was this?" (trip type), "Who should appear most?" (placeholder for face detection)
+- How does the free-text agent interact with the favourited photo metadata signal (item 3 above)?
 
-**Decision needed before PR 1B:** settle on the 1 MVP survey question and exactly what pipeline behaviour it drives.
+**Decision needed before PR 1B:** confirm the 1 MVP question and what pipeline behaviour it drives.
