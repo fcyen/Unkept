@@ -208,6 +208,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - `stages/cluster.js` — day strategy (default), time-gap strategy
 - `stages/dedup.test.js` — exact hash collision; near-duplicate within hamming threshold removed; photos outside threshold kept; empty input
 - `stages/cluster.test.js` — correct grouping by date; no-timestamp photos land in undated group; single-photo day forms its own chapter; unsorted input produces same output as sorted
+- HEIC handling: attempt `createImageBitmap()` per file; catch failure; mark photo as `thumbnailFailed: true`; continue pipeline; surface count to UI for a non-blocking notice
 
 **PR 1B: Survey component + pipeline checkpoint** **[MVP — secondary]**
 - `SurveyModal.jsx` — 2–3 questions, timeout logic, skip option

@@ -4,18 +4,21 @@ High-priority discussion points that could affect the major implementation plan.
 
 ---
 
-## 1. HEIC Support Gap
+## 1. HEIC Support Gap — CLOSED
 
-**Blocks:** PR 1A (pipeline stages), upload flow design
+**Decision:** graceful degradation in MVP; WASM decoder post-MVP if usage data justifies it.
 
-iPhone users (primary target) shoot in HEIC by default. `exifr` can read EXIF from HEIC files, but browser canvas / OffscreenCanvas cannot decode HEIC for thumbnail generation in Chrome or Firefox — only Safari on Apple devices handles it natively.
+EXIF extraction works for HEIC on all platforms (`exifr` parses binary structure directly). Thumbnail generation fails silently on Chrome/Firefox on desktop (Blink + Skia have no HEIC decoder). All iOS browsers are WebKit under the hood, so iPhone users are unaffected.
 
-**Decision needed:**
-- Do we ship a WASM-based HEIC decoder (e.g. `libheif-js`) to handle this universally?
-- Do we detect HEIC and show a clear error, asking the user to convert first?
-- Do we rely on Safari-only support for now and accept that Chrome users on iPhone cannot use the app?
+**MVP behaviour:**
+- Attempt `createImageBitmap()` on each file during thumbnail generation
+- Detect failure; skip thumbnail for that photo; continue the pipeline
+- Show a small notice if any HEIC files failed: "X photos couldn't be previewed — open in Safari or share as JPEGs"
+- Do not block the pipeline or show a hard error
 
-**Investigation required before PR 1A:** test HEIC upload end-to-end in Chrome on iOS and on desktop to confirm the exact failure mode.
+**Post-MVP:** add `heic2any` (~2MB WASM) if analytics show desktop HEIC failures are a common pain point.
+
+**Pre-PR 1A investigation:** confirm `createImageBitmap()` failure on a HEIC file is catchable (throws or returns detectable blank) — 30-minute test, not a blocker.
 
 ---
 
