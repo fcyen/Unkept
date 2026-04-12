@@ -1,7 +1,7 @@
 export default function TableOfContents({ chapters, onSelect }) {
   // Group by date
   const grouped = [];
-  let currentDate = undefined; // use undefined so null dates still trigger a new group
+  let currentDate = null;
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i];
     if (ch.date !== currentDate) {
