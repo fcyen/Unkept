@@ -1,11 +1,16 @@
 /**
  * Deduplication Stage
  *
- * Pipeline stage signature: (photos: PhotoData[], options, onProgress) => PhotoData[]
+ * Pipeline stage signature:
+ *   (photos: PhotoData[], options, onProgress)
+ *     => { photos: PhotoData[], burstGroups: BurstGroup[], burstCandidates: PhotoData[] }
  *
  * Two-pass deduplication:
  * 1. Exact hash: first 64KB + last 64KB + file size (no image decoding needed)
+ *    Exact duplicates are dropped entirely — they have no frame variation.
  * 2. Perceptual hash: 16px grayscale average hash, hamming distance comparison
+ *    Near-duplicates become burst candidates — preserved for live-photo
+ *    rendering in PR 2F but not shown as individual photos in the story.
  *
  * Blob URLs for rejected duplicates are revoked immediately.
  */
@@ -102,10 +107,21 @@ function hammingDistance(a, b) {
  * @param {PhotoData[]} photos
  * @param {{ hammingThreshold?: number }} options
  * @param {(done: number, total: number) => void} onProgress
- * @returns {Promise<PhotoData[]>}
+ * @returns {Promise<{ photos: PhotoData[], burstGroups: BurstGroup[], burstCandidates: PhotoData[] }>}
+ *
+ * Returns:
+ *   - photos: the representatives kept in the story
+ *   - burstCandidates: near-duplicates (perceptual hash matches) that were
+ *     otherwise rejected; preserved for future live-photo rendering (PR 2F)
+ *   - burstGroups: { representativeId, candidateIds[] } mapping
+ *
+ * Exact-hash duplicates (identical bytes) are discarded entirely — they are
+ * not useful as burst candidates since they contain no frame variation.
  */
 export async function dedupStage(photos, options = {}, onProgress) {
-  if (photos.length === 0) return [];
+  if (photos.length === 0) {
+    return { photos: [], burstGroups: [], burstCandidates: [] };
+  }
 
   const threshold = options.hammingThreshold ?? DEFAULT_HAMMING_THRESHOLD;
   const total = photos.length;
@@ -119,7 +135,7 @@ export async function dedupStage(photos, options = {}, onProgress) {
     const hash = await computeExactHash(photo.file);
 
     if (exactHashMap.has(hash)) {
-      // Duplicate — skip this photo
+      // Exact duplicate — discard entirely (no frame variation to preserve)
       continue;
     }
 
@@ -129,9 +145,11 @@ export async function dedupStage(photos, options = {}, onProgress) {
     if (onProgress) onProgress(i + 1, total);
   }
 
-  // Pass 2: Perceptual hash deduplication
+  // Pass 2: Perceptual hash deduplication — near-duplicates become burst candidates
   const kept = [];
   const perceptualHashes = [];
+  const burstCandidates = [];
+  const burstGroupsByRepId = new Map(); // representativeId -> { representativeId, candidateIds }
 
   for (let i = 0; i < afterExact.length; i++) {
     const photo = afterExact[i];
@@ -148,25 +166,39 @@ export async function dedupStage(photos, options = {}, onProgress) {
     }
 
     // Check against all previously kept photos
-    let isDuplicate = false;
+    let matchedRepIdx = -1;
     for (let j = 0; j < perceptualHashes.length; j++) {
       if (perceptualHashes[j] === null) continue;
       const dist = hammingDistance(pHash, perceptualHashes[j]);
       if (dist <= threshold) {
-        isDuplicate = true;
+        matchedRepIdx = j;
         break;
       }
     }
 
-    if (!isDuplicate) {
+    if (matchedRepIdx === -1) {
       kept.push(photo);
       perceptualHashes.push(pHash);
+    } else {
+      // This photo is a burst candidate of kept[matchedRepIdx]
+      burstCandidates.push(photo);
+      const repId = kept[matchedRepIdx].id;
+      let group = burstGroupsByRepId.get(repId);
+      if (!group) {
+        group = { representativeId: repId, candidateIds: [] };
+        burstGroupsByRepId.set(repId, group);
+      }
+      group.candidateIds.push(photo.id);
     }
   }
 
   if (onProgress) onProgress(total, total);
 
-  return kept;
+  return {
+    photos: kept,
+    burstGroups: [...burstGroupsByRepId.values()],
+    burstCandidates,
+  };
 }
 
 // Exported for testing

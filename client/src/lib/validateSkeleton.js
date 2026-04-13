@@ -39,14 +39,27 @@ export function isValidSkeleton(skeleton) {
   }
 
   // Chapters
+  const allPhotoIds = skeleton.photos ? new Set(Object.keys(skeleton.photos)) : new Set();
+
   if (!Array.isArray(skeleton.chapters)) {
     errors.push('Missing or invalid "chapters" (expected array)');
   } else {
-    const allPhotoIds = skeleton.photos ? new Set(Object.keys(skeleton.photos)) : new Set();
-
     for (let i = 0; i < skeleton.chapters.length; i++) {
       const chapterErrors = validateChapter(skeleton.chapters[i], i, allPhotoIds);
       errors.push(...chapterErrors);
+    }
+  }
+
+  // Burst groups (optional — defaults to empty array)
+  if (skeleton.burstGroups !== undefined) {
+    if (!Array.isArray(skeleton.burstGroups)) {
+      errors.push('"burstGroups" must be an array');
+    } else {
+      const seenIds = new Set(); // a photo can appear in at most one burst group
+      for (let i = 0; i < skeleton.burstGroups.length; i++) {
+        const groupErrors = validateBurstGroup(skeleton.burstGroups[i], i, allPhotoIds, seenIds);
+        errors.push(...groupErrors);
+      }
     }
   }
 
@@ -125,6 +138,50 @@ function validatePhoto(id, photo) {
   // No File object references
   if (photo.file !== undefined) {
     errors.push(`${prefix} still contains a File reference — must be stripped`);
+  }
+
+  return errors;
+}
+
+function validateBurstGroup(group, index, allPhotoIds, seenIds) {
+  const errors = [];
+  const prefix = `burstGroups[${index}]`;
+
+  if (!group || typeof group !== 'object') {
+    errors.push(`${prefix} must be an object`);
+    return errors;
+  }
+
+  if (typeof group.representativeId !== 'string') {
+    errors.push(`${prefix}.representativeId must be a string`);
+  } else if (!allPhotoIds.has(group.representativeId)) {
+    errors.push(`${prefix}.representativeId "${group.representativeId}" not found in photos`);
+  } else if (seenIds.has(group.representativeId)) {
+    errors.push(`${prefix}.representativeId "${group.representativeId}" appears in another burst group`);
+  } else {
+    seenIds.add(group.representativeId);
+  }
+
+  if (!Array.isArray(group.candidateIds) || group.candidateIds.length === 0) {
+    errors.push(`${prefix}.candidateIds must be a non-empty array`);
+  } else {
+    for (const cid of group.candidateIds) {
+      if (typeof cid !== 'string') {
+        errors.push(`${prefix}.candidateIds contains a non-string value`);
+        continue;
+      }
+      if (!allPhotoIds.has(cid)) {
+        errors.push(`${prefix}.candidateIds references unknown photo "${cid}"`);
+      }
+      if (seenIds.has(cid)) {
+        errors.push(`${prefix}.candidateIds "${cid}" appears in another burst group`);
+      } else {
+        seenIds.add(cid);
+      }
+      if (cid === group.representativeId) {
+        errors.push(`${prefix}.candidateIds must not include the representative itself`);
+      }
+    }
   }
 
   return errors;

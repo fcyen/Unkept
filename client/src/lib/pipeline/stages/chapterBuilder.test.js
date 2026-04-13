@@ -98,6 +98,86 @@ describe('chapterBuilderStage', () => {
     expect(validation.valid).toBe(true);
   });
 
+  it('includes burst candidates in photos map but not in chapter photoIds', async () => {
+    const clusters = [
+      [makePhoto('p1', '2025-03-15T08:00:00Z'), makePhoto('p2', '2025-03-15T09:00:00Z')],
+    ];
+    const heroIds = new Set(['p1']);
+    const burstGroups = [{ representativeId: 'p1', candidateIds: ['p1_burst1', 'p1_burst2'] }];
+    const burstCandidates = [
+      makePhoto('p1_burst1', '2025-03-15T08:00:01Z'),
+      makePhoto('p1_burst2', '2025-03-15T08:00:02Z'),
+    ];
+
+    const result = await chapterBuilderStage({ clusters, heroIds, burstGroups, burstCandidates });
+
+    // Chapter photoIds only contain cluster photos, not burst candidates
+    expect(result.chapters[0].photoIds).toEqual(['p1', 'p2']);
+    expect(result.chapters[0].photoIds).not.toContain('p1_burst1');
+
+    // But photos map includes everyone (for thumbnail generation + skeleton)
+    expect(result.photos.size).toBe(4);
+    expect(result.photos.has('p1_burst1')).toBe(true);
+    expect(result.photos.has('p1_burst2')).toBe(true);
+
+    // burstGroups preserved
+    expect(result.burstGroups).toHaveLength(1);
+    expect(result.burstGroups[0].representativeId).toBe('p1');
+    expect(result.burstGroups[0].candidateIds).toEqual(['p1_burst1', 'p1_burst2']);
+  });
+
+  it('drops burst groups whose representative is not in any chapter', async () => {
+    const clusters = [
+      [makePhoto('p1', '2025-03-15T08:00:00Z')],
+    ];
+    const heroIds = new Set(['p1']);
+    // Dangling burst group — its representative p99 was never selected
+    const burstGroups = [
+      { representativeId: 'p1', candidateIds: ['p1_burst1'] },
+      { representativeId: 'p99', candidateIds: ['p99_burst1'] },
+    ];
+    const burstCandidates = [
+      makePhoto('p1_burst1'),
+      makePhoto('p99_burst1'),
+    ];
+
+    const result = await chapterBuilderStage({ clusters, heroIds, burstGroups, burstCandidates });
+
+    expect(result.burstGroups).toHaveLength(1);
+    expect(result.burstGroups[0].representativeId).toBe('p1');
+    // Only the valid burst candidate should be in photos map
+    expect(result.photos.has('p1_burst1')).toBe(true);
+    expect(result.photos.has('p99_burst1')).toBe(false);
+  });
+
+  it('burst groups survive into assembled skeleton and pass validation', async () => {
+    const clusters = [
+      [makePhoto('p1', '2025-03-15T08:00:00Z', { lat: 35.67, lng: 139.65 })],
+    ];
+    const heroIds = new Set(['p1']);
+    const burstGroups = [{ representativeId: 'p1', candidateIds: ['p1_burst1'] }];
+    const burstCandidates = [makePhoto('p1_burst1', '2025-03-15T08:00:01Z')];
+
+    const result = await chapterBuilderStage({ clusters, heroIds, burstGroups, burstCandidates });
+
+    for (const [, photo] of result.photos) {
+      delete photo.file;
+    }
+
+    const skeleton = assembleSkeleton(result, {
+      totalPhotosInput: 2,
+      totalPhotosAfterDedup: 1,
+    });
+
+    expect(skeleton.burstGroups).toHaveLength(1);
+    expect(skeleton.burstGroups[0].representativeId).toBe('p1');
+    expect(skeleton.burstGroups[0].candidateIds).toEqual(['p1_burst1']);
+    expect(skeleton.photos['p1_burst1']).toBeDefined();
+
+    const validation = isValidSkeleton(skeleton);
+    expect(validation.valid).toBe(true);
+  });
+
   it('no File objects in assembled skeleton', async () => {
     const clusters = [
       [makePhoto('p1', '2025-03-15T08:00:00Z')],

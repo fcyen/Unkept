@@ -14,13 +14,23 @@
  */
 
 /**
- * @param {PhotoData[][]} clusters
+ * @param {PhotoData[][] | { clusters: PhotoData[][], burstGroups?: BurstGroup[], burstCandidates?: PhotoData[] }} input
  * @param {{ highlightDates?: string[] }} options - survey responses
  * @param {(done: number, total: number) => void} onProgress
- * @returns {Promise<{ clusters: PhotoData[][], heroIds: Set<string> }>}
+ * @returns {Promise<{ clusters: PhotoData[][], heroIds: Set<string>, burstGroups: BurstGroup[], burstCandidates: PhotoData[] }>}
+ *
+ * Accepts either a bare `clusters[][]` or the cluster stage output shape
+ * `{ clusters, burstGroups, burstCandidates }`. Burst data passes through unchanged.
  */
-export async function heroSelectStage(clusters, options = {}, onProgress) {
-  if (clusters.length === 0) return { clusters: [], heroIds: new Set() };
+export async function heroSelectStage(input, options = {}, onProgress) {
+  const isObjectInput = !Array.isArray(input);
+  const clusters = isObjectInput ? input.clusters : input;
+  const burstGroups = isObjectInput ? (input.burstGroups || []) : [];
+  const burstCandidates = isObjectInput ? (input.burstCandidates || []) : [];
+
+  if (clusters.length === 0) {
+    return { clusters: [], heroIds: new Set(), burstGroups, burstCandidates };
+  }
 
   const highlightDates = new Set(options.highlightDates || []);
   const heroIds = new Set();
@@ -36,7 +46,7 @@ export async function heroSelectStage(clusters, options = {}, onProgress) {
     if (onProgress) onProgress(i + 1, total);
   }
 
-  return { clusters, heroIds };
+  return { clusters, heroIds, burstGroups, burstCandidates };
 }
 
 /**

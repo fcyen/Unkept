@@ -14,16 +14,24 @@
  */
 
 /**
- * @param {{ clusters: PhotoData[][], heroIds: Set<string> }} input
+ * @param {{ clusters: PhotoData[][], heroIds: Set<string>, burstGroups?: BurstGroup[], burstCandidates?: PhotoData[] }} input
  * @param {object} options
  * @param {(done: number, total: number) => void} onProgress
- * @returns {Promise<{ chapters: Chapter[], photos: Map<string, PhotoData> }>}
+ * @returns {Promise<{ chapters: Chapter[], photos: Map<string, PhotoData>, burstGroups: BurstGroup[] }>}
+ *
+ * Builds chapter structure from clustered photos. Burst candidates (near-
+ * duplicates from dedup) are added to the photos map so they receive
+ * thumbnails and survive into the final skeleton, but are NOT added to
+ * chapter photoIds — the story only shows the representative. The renderer
+ * can consult `burstGroups` later to animate bursts as live photos (PR 2F).
  */
 export async function chapterBuilderStage(input, options = {}, onProgress) {
   const { clusters, heroIds } = input;
+  const burstGroups = input.burstGroups || [];
+  const burstCandidates = input.burstCandidates || [];
 
   if (clusters.length === 0) {
-    return { chapters: [], photos: new Map() };
+    return { chapters: [], photos: new Map(), burstGroups: [] };
   }
 
   const chapters = [];
@@ -47,7 +55,7 @@ export async function chapterBuilderStage(input, options = {}, onProgress) {
       coords,
     });
 
-    // Track all selected photos
+    // Track all photos shown in chapters
     for (const photo of cluster) {
       selectedPhotos.set(photo.id, photo);
     }
@@ -55,7 +63,26 @@ export async function chapterBuilderStage(input, options = {}, onProgress) {
     if (onProgress) onProgress(i + 1, total);
   }
 
-  return { chapters, photos: selectedPhotos };
+  // Include burst candidates so they get thumbnails and land in skeleton.photos.
+  // They are NOT in any chapter's photoIds — only referenced via burstGroups.
+  // Only candidates whose representative was actually selected into a chapter
+  // need to be preserved (if the representative was somehow dropped, the
+  // burst group is dangling — filter those out).
+  const keptPhotoIds = new Set(selectedPhotos.keys());
+  const validBurstGroups = burstGroups.filter((g) => keptPhotoIds.has(g.representativeId));
+
+  const validCandidateIds = new Set();
+  for (const group of validBurstGroups) {
+    for (const id of group.candidateIds) validCandidateIds.add(id);
+  }
+
+  for (const photo of burstCandidates) {
+    if (validCandidateIds.has(photo.id)) {
+      selectedPhotos.set(photo.id, photo);
+    }
+  }
+
+  return { chapters, photos: selectedPhotos, burstGroups: validBurstGroups };
 }
 
 function findHeroInCluster(cluster, heroIds) {
