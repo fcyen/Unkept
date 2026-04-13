@@ -98,13 +98,28 @@ function clusterByTimeGap(photos, gapMs = DEFAULT_GAP_MS) {
 }
 
 /**
- * @param {PhotoData[]} photos
+ * @param {PhotoData[] | { photos: PhotoData[], burstGroups?: BurstGroup[], burstCandidates?: PhotoData[] }} input
  * @param {{ strategy?: 'day' | 'timeGap', gapMs?: number }} options
  * @param {(done: number, total: number) => void} onProgress
- * @returns {Promise<PhotoData[][]>}
+ * @returns {Promise<PhotoData[][] | { clusters: PhotoData[][], burstGroups: BurstGroup[], burstCandidates: PhotoData[] }>}
+ *
+ * Accepts either a bare `photos[]` (legacy) or the dedup stage output shape
+ * `{ photos, burstGroups, burstCandidates }`. When given the object shape,
+ * the return value is also an object with `clusters` plus burst data passed
+ * through unchanged — burst candidates are NOT clustered (they're only used
+ * for live-photo rendering later, not for story layout).
  */
-export async function clusterStage(photos, options = {}, onProgress) {
-  if (photos.length === 0) return [];
+export async function clusterStage(input, options = {}, onProgress) {
+  const isObjectInput = !Array.isArray(input);
+  const photos = isObjectInput ? input.photos : input;
+  const burstGroups = isObjectInput ? (input.burstGroups || []) : [];
+  const burstCandidates = isObjectInput ? (input.burstCandidates || []) : [];
+
+  if (photos.length === 0) {
+    return isObjectInput
+      ? { clusters: [], burstGroups, burstCandidates }
+      : [];
+  }
 
   const strategy = options.strategy || 'day';
 
@@ -117,7 +132,9 @@ export async function clusterStage(photos, options = {}, onProgress) {
 
   if (onProgress) onProgress(photos.length, photos.length);
 
-  return clusters;
+  return isObjectInput
+    ? { clusters, burstGroups, burstCandidates }
+    : clusters;
 }
 
 // Export individual strategies for direct use and testing

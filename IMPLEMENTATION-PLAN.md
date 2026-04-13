@@ -54,6 +54,14 @@ This plan reflects the revised architecture from the system design review (April
     },
     ...
   ],
+  burstGroups: [
+    // Preserved by dedup for future live-photo rendering; renderer ignores until PR 2E
+    {
+      representativeId: "photo_5",        // the photo dedup selected (kept in story)
+      candidateIds: ["photo_6", "photo_7"],  // near-duplicates that were otherwise rejected
+    },
+    ...
+  ],
   meta: {
     totalPhotosInput: 847,
     totalPhotosAfterDedup: 612,
@@ -220,7 +228,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 
 **PR 1A: Cheap pipeline stages** **[MVP]**
 - `stages/exif.js` — wraps Web Worker, returns PhotoData[]
-- `stages/dedup.js` — exact + perceptual hash; revokes blob URLs for rejects
+- `stages/dedup.js` — exact + perceptual hash; revokes blob URLs for rejects; preserves burst groups in `skeleton.burstGroups` (near-duplicate clusters, representative + candidate IDs) rather than discarding them — enables live-photo rendering in PR 2E without a pipeline rewrite
 - `stages/cluster.js` — day strategy (default), time-gap strategy
 - `stages/dedup.test.js` — exact hash collision; near-duplicate within hamming threshold removed; photos outside threshold kept; empty input
 - `stages/cluster.test.js` — correct grouping by date; no-timestamp photos land in undated group; single-photo day forms its own chapter; unsorted input produces same output as sorted
@@ -275,6 +283,19 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - `ModeBadge.jsx` — "Local mode" / "Server mode" badge, always visible in header
 - `ServerModeBoundaryModal.jsx` — one-time notification explaining what gets sent when first server feature is triggered
 - Triggered on: first geocoding request (if routed via server) or first caption generation
+
+**PR 2E: Background music** **[post-MVP]**
+- 2–3 short ambient loops bundled with the app (~30–60s each, Opus-compressed, ~1–2MB total); royalty-free (Pixabay Music or similar)
+- Simple `<audio>` playback with loop; autoplay is blocked by mobile browsers — requires a visible play/pause affordance (e.g. a small control in the story header)
+- User preference (on/off, track choice) stored in localStorage; off by default
+- Pure renderer concern — no pipeline or data model changes required
+- **Prerequisite:** PR 2B renderer stable; defer until after that ships
+
+**PR 2F: Live photos from burst groups** **[post-MVP]**
+- Renderer reads `skeleton.burstGroups`; for bursts of 2–4 near-identical frames, generates a looping animation in place of a still
+- Implementation: sequence of `<img>` frames swapped on a short interval (no GIF encoding needed), or CSS animation over data URLs
+- Burst data already captured by dedup (PR 1A) — no pipeline changes required
+- Tap/click toggles between live and still; live is opt-in by default on low-battery or reduced-motion devices
 
 ### Phase 3 — LLM integration (opt-in) **[post-MVP]**
 

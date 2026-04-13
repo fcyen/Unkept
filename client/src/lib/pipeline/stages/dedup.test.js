@@ -45,10 +45,10 @@ describe('dedupStage (logic)', () => {
     };
   }
 
-  it('returns empty array for empty input', async () => {
+  it('returns empty-shaped result for empty input', async () => {
     const { dedupStage } = await import('./dedup.js');
     const result = await dedupStage([], {});
-    expect(result).toEqual([]);
+    expect(result).toEqual({ photos: [], burstGroups: [], burstCandidates: [] });
   });
 
   it('keeps a single photo', async () => {
@@ -59,8 +59,10 @@ describe('dedupStage (logic)', () => {
     // but the exact hash pass should work. We catch the perceptual hash error.
     try {
       const result = await dedupStage(photos, {});
-      expect(result.length).toBe(1);
-      expect(result[0].id).toBe('p1');
+      expect(result.photos.length).toBe(1);
+      expect(result.photos[0].id).toBe('p1');
+      expect(result.burstGroups).toEqual([]);
+      expect(result.burstCandidates).toEqual([]);
     } catch {
       // Expected in Node environment without canvas APIs
     }

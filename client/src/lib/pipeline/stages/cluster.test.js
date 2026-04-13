@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clusterByDay, clusterByTimeGap } from './cluster.js';
+import { clusterByDay, clusterByTimeGap, clusterStage } from './cluster.js';
 
 function makePhoto(id, timestamp, coords = null) {
   return { id, name: `${id}.jpg`, timestamp, coords, file: null };
@@ -175,5 +175,46 @@ describe('clusterByTimeGap', () => {
     // With 30-minute threshold, should stay together
     const clusters30 = clusterByTimeGap(photos, 30 * 60 * 1000);
     expect(clusters30).toHaveLength(1);
+  });
+});
+
+describe('clusterStage (burst passthrough)', () => {
+  it('accepts bare photo array (legacy) and returns bare cluster array', async () => {
+    const photos = [
+      makePhoto('p1', '2025-03-15T08:00:00Z'),
+      makePhoto('p2', '2025-03-16T09:00:00Z'),
+    ];
+
+    const result = await clusterStage(photos, { strategy: 'day' });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+  });
+
+  it('accepts object input and passes burst data through unchanged', async () => {
+    const input = {
+      photos: [
+        makePhoto('p1', '2025-03-15T08:00:00Z'),
+        makePhoto('p2', '2025-03-16T09:00:00Z'),
+      ],
+      burstGroups: [{ representativeId: 'p1', candidateIds: ['p1_burst'] }],
+      burstCandidates: [makePhoto('p1_burst', '2025-03-15T08:00:01Z')],
+    };
+
+    const result = await clusterStage(input, { strategy: 'day' });
+
+    expect(Array.isArray(result)).toBe(false);
+    expect(result.clusters).toHaveLength(2);
+    // Burst candidates are NOT clustered
+    const allClusteredIds = result.clusters.flat().map((p) => p.id);
+    expect(allClusteredIds).not.toContain('p1_burst');
+    // Burst data preserved
+    expect(result.burstGroups).toHaveLength(1);
+    expect(result.burstCandidates).toHaveLength(1);
+  });
+
+  it('returns empty shape for empty object input', async () => {
+    const result = await clusterStage({ photos: [], burstGroups: [], burstCandidates: [] }, {});
+    expect(result).toEqual({ clusters: [], burstGroups: [], burstCandidates: [] });
   });
 });
