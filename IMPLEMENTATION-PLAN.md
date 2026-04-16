@@ -259,7 +259,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 >
 > **Design learning goal:** UI/UX design — state machines, gesture design, progressive disclosure, micro-interactions, transition animations, trust UX. Primary references: Spotify Wrapped, Apple Memories, Google Photos Memories.
 >
-> See `client/Phase-2-Design/phase-2-design-intent.md` for the design intent and storyboard.
+> See `PHASE-2-DESIGN-INTENT.md` for the design intent and storyboard.
 
 **PR 2A: Part 2 data layer** **[MVP]**
 - `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story (frames, not blocks)
