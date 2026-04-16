@@ -266,7 +266,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - Geocoding stage (Nominatim, progressive, 1 req/s, coord dedup) — MVP blocks slideshow start until geocoding finishes (~7s for typical trip; absorbed by darkroom wait)
 - Trip name generation (country + month + year: "Indonesia, May 2025")
 - Stat derivation: distance travelled (sum of haversine between chapter centroids); suppressed under 50km threshold, falls back to photo count
-- Photo card selection: hero + next N−1 by quality score (N=3 for landscape-dominant, N=4 for portrait-dominant; ties → landscape)
+- Photo card selection: hero + next N−1 by quality score. Layout chosen based on orientation mix of chapter's selected photos — see PhotoCardFrame layouts in PR 2B. Hero is always included.
 - Frame assembly: one cover, one divider per chapter, one photo card per chapter (MVP), one coda
 
 **PR 2B: Wrapped-style slideshow player** **[MVP]**
@@ -274,7 +274,13 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - Frame components:
   - `CoverFrame.jsx` — trip title, date range, stat line, "Ready to relive your trip" CTA (this tap starts music + auto-advance)
   - `ChapterDividerFrame.jsx` — 3-row layout (photo / text / photo); text fly-in entry, photos-slide-out-opposite-sides exit
-  - `PhotoCardFrame.jsx` — 3 landscape OR 4 portrait photos; flip-from-top (landscape) or flip-from-left-staggered (portrait)
+  - `PhotoCardFrame.jsx` — five layouts based on available orientation mix:
+    - `landscape-3` — 3 landscape, stacked; flip-from-top entry
+    - `portrait-4` — 4 portrait; flip-from-left, staggered timing
+    - `mixed-2p-1l` — 2 portraits on top, 1 landscape on bottom
+    - `landscape-2` — 2 landscape, stacked
+    - `portrait-1` — single portrait filling the frame (fallback)
+    - Selection priority: pick the layout that shows the most photos while matching the hero's orientation constraints; degrade to `portrait-1` when no richer layout fits
   - `CodaFrame.jsx` — closing line ("That's your trip."), play-again affordance
 - Frame timing: cover = until tap; divider = 3s; photo card = 4–5s; coda = 5s then holds. Transitions ~400ms.
 - Gesture handlers: tap right = next, tap left = previous, hold = pause, tap once = show controls
