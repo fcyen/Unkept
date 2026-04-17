@@ -253,49 +253,69 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 
 ### Phase 2 — Story renderer (Part 2) **[MVP]**
 
-> Primary quality focus for MVP: the renderer must produce output that is showable to others on mobile. This is the highest-care phase.
+> Primary quality focus for MVP: the slideshow must be showable to others on mobile. This is the highest-care phase.
 >
-> **Design learning goal:** Phase 2 is the primary opportunity to develop editorial design skills alongside engineering. Before each PR, study 2–3 reference layouts (magazine spreads, Exposure.so photo essays, editorial blogs), form a clear design intent, then implement and iterate using the `/dev` route. The learning is in the gap between intended and actual — iterate until they match.
+> **Design direction:** Wrapped-style slideshow. Auto-advancing frames — cover → chapter dividers → photo cards → coda — with bundled music. Merges the "reveal" (user sees the curated story for the first time) and "show" (user hands phone to someone else) into a single replayable experience. No scrolling editorial page in MVP; no refinement UI in MVP.
 >
-> Design skills this phase exercises: typographic hierarchy, photo layout and grid, whitespace and pacing, visual flow, mobile-first responsive adaptation, subtle motion.
+> **Design learning goal:** UI/UX design — state machines, gesture design, progressive disclosure, micro-interactions, transition animations, trust UX. Primary references: Spotify Wrapped, Apple Memories, Google Photos Memories.
+>
+> See `PHASE-2-DESIGN-INTENT.md` for the design intent and storyboard.
 
 **PR 2A: Part 2 data layer** **[MVP]**
-- `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story
-- Geocoding stage (Nominatim, progressive, 1 req/s, coord dedup)
-- Trip name generation
-- Block assembly
+- `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story (frames, not blocks)
+- Geocoding stage (Nominatim, progressive, 1 req/s, coord dedup) — MVP blocks slideshow start until geocoding finishes (~7s for typical trip; absorbed by darkroom wait)
+- Trip name generation (country + month + year: "Indonesia, May 2025")
+- Stat derivation: distance travelled (sum of haversine between chapter centroids); suppressed under 50km threshold, falls back to photo count
+- Photo card selection: hero + next N−1 by quality score. Layout chosen based on orientation mix of chapter's selected photos — see PhotoCardFrame layouts in PR 2B. Hero is always included.
+- Frame assembly: one cover, one divider per chapter, one photo card per chapter (MVP), one coda
 
-**PR 2B: Renderer components** **[MVP]**
-- `StoryView.jsx` — accepts Story prop (pure renderer, no pipeline awareness)
-- `Chapter.jsx` — block-based rendering
-- `EditablePhotoLayout.jsx` — layout patterns (pair, single, asymmetric, trio); remove dnd-kit drag-to-reorder, keep layout rendering
-- Progressive geocoding: chapters update in place as locations resolve
-- Design focus: typographic scale and hierarchy; chapter pacing and whitespace; cover page composition; photo layout variety. Study editorial references before implementing. Iterate using `/dev` route — all 3 fixture scenarios visible instantly without uploading photos.
+**PR 2B: Wrapped-style slideshow player** **[MVP]**
+- `SlideshowPlayer.jsx` — accepts Story prop; state machine (idle → playing → paused → finished); auto-advances through frames
+- Frame components:
+  - `CoverFrame.jsx` — trip title, date range, stat line, "Ready to relive your trip" CTA (this tap starts music + auto-advance)
+  - `ChapterDividerFrame.jsx` — 3-row layout (photo / text / photo); text fly-in entry, photos-slide-out-opposite-sides exit
+  - `PhotoCardFrame.jsx` — five layouts based on available orientation mix:
+    - `landscape-3` — 3 landscape, stacked; flip-from-top entry
+    - `portrait-4` — 4 portrait; flip-from-left, staggered timing
+    - `mixed-2p-1l` — 2 portraits on top, 1 landscape on bottom
+    - `landscape-2` — 2 landscape, stacked
+    - `portrait-1` — single portrait filling the frame (fallback)
+    - Selection priority: pick the layout that shows the most photos while matching the hero's orientation constraints; degrade to `portrait-1` when no richer layout fits
+  - `CodaFrame.jsx` — closing line ("That's your trip."), play-again affordance
+- Frame timing: cover = until tap; divider = 3s; photo card = 4–5s; coda = 5s then holds. Transitions ~400ms.
+- Gesture handlers: tap right = next, tap left = previous, hold = pause, tap once = show controls
+- Progress indicator: segmented bar at top, hidden until tap-to-pause
+- Captions on photo cards: out of MVP — text lives on chapter dividers only
+- Iterate using `/dev` route with all 3 fixture scenarios
 
-**PR 2C: Photo swap interaction** **[MVP — secondary]**
-- Each selected photo has a swap affordance (icon overlay on hover/tap)
-- Tapping swap opens a grid of 4–6 alternative candidates from the same chapter's pool
-- One tap selects the replacement; the story updates in place
-- Swap choices are recorded in the Story Skeleton (`meta.swapHistory`) as the first source of preference signal for the personalisation roadmap
-- Drag-to-reorder within a story remains out of scope
+**PR 2C: Darkroom processing view** **[MVP]**
+- `DarkroomView.jsx` — the Moment 2 "wait" screen shown between drop-in and reveal
+- Visual metaphor: darkroom / film development. Thumbnails fade in on a dim background as EXIF / dedup / thumbnail stages complete. Optional red-safelight accent.
+- Progress copy describes current stage ("Reading timestamps...", "Finding duplicates...", "Choosing highlights...", "Finding locations...")
+- Integrates with pipeline events from `usePipeline.js` (PR 1B)
+- Handoff: on pipeline + geocoding complete, transitions to the slideshow cover frame (which waits for the user's tap)
 
-**PR 2D: Mode indicator + boundary notification** **[post-MVP]**
+**PR 2D: Music** **[MVP]**
+- 2–3 short ambient loops bundled with the app (~30–60s each, Opus-compressed, ~1–2MB total); royalty-free (Pixabay Music, Uppbeat, or similar)
+- Audio starts on cover CTA tap (resolves mobile autoplay restriction); fades in over 2s; loops for slideshow duration; fades out over 2s at coda
+- Play/pause affordance visible in tap-to-reveal controls
+- MVP: one default track, no selector. Post-MVP: track selector in settings.
+- User preference (on/off) stored in localStorage; on by default for the first play
+
+**PR 2E: Photo swap interaction** **[post-MVP — Moment 5 refinement]**
+- Moved out of MVP — refinement is the Moment 5 concern, out of scope for MVP reveal/show loop
+- When implemented: swap affordance on photo-card photos; 4–6 candidate grid; swap choices recorded in `meta.swapHistory` for preference learning
+
+**PR 2F: Mode indicator + boundary notification** **[post-MVP]**
 - `ModeBadge.jsx` — "Local mode" / "Server mode" badge, always visible in header
 - `ServerModeBoundaryModal.jsx` — one-time notification explaining what gets sent when first server feature is triggered
 - Triggered on: first geocoding request (if routed via server) or first caption generation
 
-**PR 2E: Background music** **[post-MVP]**
-- 2–3 short ambient loops bundled with the app (~30–60s each, Opus-compressed, ~1–2MB total); royalty-free (Pixabay Music or similar)
-- Simple `<audio>` playback with loop; autoplay is blocked by mobile browsers — requires a visible play/pause affordance (e.g. a small control in the story header)
-- User preference (on/off, track choice) stored in localStorage; off by default
-- Pure renderer concern — no pipeline or data model changes required
-- **Prerequisite:** PR 2B renderer stable; defer until after that ships
-
-**PR 2F: Live photos from burst groups** **[post-MVP]**
-- Renderer reads `skeleton.burstGroups`; for bursts of 2–4 near-identical frames, generates a looping animation in place of a still
+**PR 2G: Live photos from burst groups** **[post-MVP]**
+- Slideshow photo cards read `skeleton.burstGroups`; for bursts of 2–4 near-identical frames, a photo-card cell renders a loop instead of a still
 - Implementation: sequence of `<img>` frames swapped on a short interval (no GIF encoding needed), or CSS animation over data URLs
 - Burst data already captured by dedup (PR 1A) — no pipeline changes required
-- Tap/click toggles between live and still; live is opt-in by default on low-battery or reduced-motion devices
+- Respects `prefers-reduced-motion`
 
 ### Phase 3 — LLM integration (opt-in) **[post-MVP]**
 
