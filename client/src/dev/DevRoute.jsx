@@ -1,49 +1,85 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { scenarioList } from './fixtures.js';
 import { buildStory } from '../lib/storyBuilder.js';
 import { isValidSkeleton } from '../lib/validateSkeleton.js';
+import SlideshowPlayer from '../components/slideshow/SlideshowPlayer.jsx';
 
 /**
- * Dev route — renders all three fixture scenarios side by side so the
- * slideshow renderer (PR 2B) can be iterated instantly without running
- * the pipeline or uploading files.
+ * Dev route — three fixture scenarios side by side.
  *
- * Until the SlideshowPlayer lands, this shows a debug summary of each
- * scenario: skeleton validity, trip metadata, stat choice, and the
- * frame sequence with photo-card layouts resolved. Once PR 2B is in
- * place, replace `ScenarioPreview` with the real player.
+ * Each card shows a debug summary (validation, trip name, stat, frame
+ * layout choices). Clicking "Play" opens the SlideshowPlayer full-screen
+ * over everything so frame pacing, transitions, and gestures can be
+ * iterated instantly — no pipeline run, no file upload.
  */
 export default function DevRoute() {
+  const [playingKey, setPlayingKey] = useState(null);
+
+  const entries = useMemo(
+    () =>
+      scenarioList.map((sc) => ({
+        ...sc,
+        validation: isValidSkeleton(sc.skeleton),
+        story: buildStory(sc.skeleton),
+      })),
+    []
+  );
+
+  const playing = playingKey ? entries.find((e) => e.key === playingKey) : null;
+
   return (
     <div className="min-h-screen bg-cream text-ink p-6">
       <header className="max-w-6xl mx-auto mb-8">
         <h1 className="font-serif text-3xl">/dev — Phase 2 fixtures</h1>
         <p className="text-muted mt-2 text-sm">
-          Three test scenarios for the Wrapped-style slideshow renderer. Edit{' '}
-          <code className="font-mono">src/dev/fixtures.js</code> to adjust.
+          Three test scenarios for the Wrapped-style slideshow. Click
+          &ldquo;Play&rdquo; on any scenario to open the SlideshowPlayer. Edit{' '}
+          <code className="font-mono">src/dev/fixtures.js</code> to tune the data.
+        </p>
+        <p className="text-muted mt-2 text-xs">
+          Keyboard: <kbd className="font-mono">→</kbd>/<kbd className="font-mono">←</kbd>{' '}
+          next/prev · <kbd className="font-mono">space</kbd> pause · <kbd className="font-mono">esc</kbd> close.
         </p>
       </header>
 
       <div className="max-w-6xl mx-auto grid gap-8 md:grid-cols-3">
-        {scenarioList.map((sc) => (
-          <ScenarioPreview key={sc.key} scenario={sc} />
+        {entries.map((e) => (
+          <ScenarioPreview
+            key={e.key}
+            entry={e}
+            onPlay={() => setPlayingKey(e.key)}
+          />
         ))}
       </div>
+
+      {playing && (
+        <SlideshowPlayer
+          story={playing.story}
+          onExit={() => setPlayingKey(null)}
+        />
+      )}
     </div>
   );
 }
 
-function ScenarioPreview({ scenario }) {
-  const { key, label, skeleton } = scenario;
-
-  const validation = useMemo(() => isValidSkeleton(skeleton), [skeleton]);
-  const story = useMemo(() => buildStory(skeleton), [skeleton]);
+function ScenarioPreview({ entry, onPlay }) {
+  const { key, label, skeleton, validation, story } = entry;
 
   return (
     <section className="border border-faint rounded-lg bg-white p-4">
-      <header className="mb-3">
-        <h2 className="font-serif text-xl">{label}</h2>
-        <div className="text-xs text-muted mt-1 font-mono">{key}</div>
+      <header className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-serif text-xl">{label}</h2>
+          <div className="text-xs text-muted mt-1 font-mono">{key}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onPlay}
+          disabled={!validation.valid}
+          className="shrink-0 px-3 py-1.5 rounded-full bg-ink text-cream text-xs tracking-wide uppercase hover:bg-black disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          ▶ Play
+        </button>
       </header>
 
       <dl className="text-sm space-y-1 mb-4">
