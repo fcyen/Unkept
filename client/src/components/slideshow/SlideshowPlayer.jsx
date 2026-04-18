@@ -29,6 +29,8 @@ import ChapterDividerFrame from './ChapterDividerFrame.jsx';
 import PhotoCardFrame from './PhotoCardFrame.jsx';
 import CodaFrame from './CodaFrame.jsx';
 import ProgressBar from './ProgressBar.jsx';
+import MusicToggle from './MusicToggle.jsx';
+import { useSlideshowMusic } from './music/useSlideshowMusic.js';
 
 const FRAME_DURATION = {
   cover: null,
@@ -59,6 +61,8 @@ export default function SlideshowPlayer({ story, onExit }) {
   const exitTimerRef = useRef(null);
   const holdTimerRef = useRef(null);
   const pointerRef = useRef(null);
+
+  const music = useSlideshowMusic();
 
   const clearAdvanceTimer = () => {
     if (advanceTimerRef.current) {
@@ -121,14 +125,26 @@ export default function SlideshowPlayer({ story, onExit }) {
     clearAdvanceTimer();
     setStatus('playing');
     setFrameIndex((i) => (i === 0 && frames.length > 1 ? 1 : i));
-  }, [frames.length]);
+    // Must run synchronously inside the user gesture to satisfy mobile
+    // autoplay restrictions.
+    music.start();
+  }, [frames.length, music]);
 
   const replay = useCallback(() => {
     clearAdvanceTimer();
     setExiting(false);
     setFrameIndex(0);
     setStatus('idle');
+    // Music will fade in again from the next cover CTA tap.
   }, []);
+
+  // Begin the music fade-out as soon as the coda starts playing, so the
+  // 2s fade lands before the 5s hold ends.
+  useEffect(() => {
+    if (currentFrame?.type === 'coda' && status === 'playing') {
+      music.fadeOut();
+    }
+  }, [currentFrame?.type, status, music]);
 
   // --- Gestures -----------------------------------------------------------
 
@@ -262,6 +278,12 @@ export default function SlideshowPlayer({ story, onExit }) {
       <div key={currentFrame.id} className="absolute inset-0">
         {frameContent}
       </div>
+
+      <MusicToggle
+        enabled={music.enabled}
+        onToggle={music.toggle}
+        visible={progressVisible}
+      />
 
       {onExit && (
         <button
