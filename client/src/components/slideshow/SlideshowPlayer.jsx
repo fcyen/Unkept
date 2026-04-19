@@ -34,9 +34,9 @@ import { useSlideshowMusic } from './music/useSlideshowMusic.js';
 
 const FRAME_DURATION = {
   cover: null,
-  chapterDivider: 3000,
-  photoCard: 4500,
-  coda: 5000,
+  chapterDivider: 2000,
+  photoCard: 2000,
+  coda: 2000,
 };
 
 const HOLD_THRESHOLD_MS = 300;

@@ -39,7 +39,7 @@ function Landscape3({ items }) {
   return (
     <div className="absolute inset-0 grid grid-rows-3 gap-1 bg-black p-1">
       {items.slice(0, 3).map((p, i) => (
-        <Cell key={p.id} photo={p} animation="flip-top" delayMs={i * 180} />
+        <Cell key={p.id} photo={p} animation="flip-top" delayMs={i * 280} />
       ))}
     </div>
   );
@@ -49,7 +49,7 @@ function Portrait4({ items }) {
   return (
     <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 gap-1 bg-black p-1">
       {items.slice(0, 4).map((p, i) => (
-        <Cell key={p.id} photo={p} animation="flip-left" delayMs={i * 150} />
+        <Cell key={p.id} photo={p} animation="flip-left" delayMs={i * 240} />
       ))}
     </div>
   );
@@ -67,9 +67,9 @@ function Mixed2p1l({ items, frame }) {
     >
       <div className="grid grid-cols-2 gap-1">
         {top1 && <Cell photo={top1} animation="flip-left" delayMs={0} />}
-        {top2 && <Cell photo={top2} animation="flip-left" delayMs={150} />}
+        {top2 && <Cell photo={top2} animation="flip-left" delayMs={240} />}
       </div>
-      {bottom && <Cell photo={bottom} animation="flip-top" delayMs={300} />}
+      {bottom && <Cell photo={bottom} animation="flip-top" delayMs={480} />}
     </div>
   );
 }
@@ -78,7 +78,7 @@ function Landscape2({ items }) {
   return (
     <div className="absolute inset-0 grid grid-rows-2 gap-1 bg-black p-1">
       {items.slice(0, 2).map((p, i) => (
-        <Cell key={p.id} photo={p} animation="flip-top" delayMs={i * 200} />
+        <Cell key={p.id} photo={p} animation="flip-top" delayMs={i * 320} />
       ))}
     </div>
   );
