@@ -1,6 +1,6 @@
 {
-  "name": "PhotoStory",
-  "short_name": "PhotoStory",
+  "name": "Unkept",
+  "short_name": "Unkept",
   "description": "Turn your photos into a beautiful narrative — processed privately on your device.",
   "start_url": "/",
   "display": "standalone",

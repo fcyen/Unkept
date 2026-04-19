@@ -85,7 +85,7 @@ export default function UploadPage({ onStoryReady }) {
       <div className="max-w-xl w-full">
         <div className="text-center mb-16">
           <h1 className="font-serif text-5xl md:text-6xl font-semibold text-ink mb-3">
-            PhotoStory
+            Unkept
           </h1>
           <div className="w-12 h-px bg-faint mx-auto mb-4" />
           <p className="font-sans text-muted text-sm tracking-wide">

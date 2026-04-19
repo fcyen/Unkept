@@ -1,4 +1,4 @@
-# PhotoStory — Claude Code Guide
+# Unkept — Claude Code Guide
 
 ## Project
 Privacy-first web app that turns photo collections into editorial stories. All selection logic runs locally in the browser; server is opt-in only.

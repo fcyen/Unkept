@@ -7,11 +7,11 @@ export default function CompatibilityBlock({ checks }) {
     <div className="min-h-screen bg-cream flex items-center justify-center px-8">
       <div className="max-w-md w-full text-center">
         <h1 className="font-serif text-3xl font-semibold text-ink mb-4">
-          This browser can&rsquo;t run PhotoStory
+          This browser can&rsquo;t run Unkept
         </h1>
         <div className="w-12 h-px bg-faint mx-auto mb-6" />
         <p className="font-sans text-sm text-muted leading-relaxed mb-8">
-          PhotoStory processes your photos entirely on your device, which needs
+          Unkept processes your photos entirely on your device, which needs
           a modern browser and enough hardware to keep up. The following
           requirements aren&rsquo;t met:
         </p>

@@ -1,4 +1,4 @@
-# PhotoStory — MVP Scope
+# Unkept — MVP Scope
 
 ## Goal
 

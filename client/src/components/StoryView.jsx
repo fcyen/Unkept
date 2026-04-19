@@ -91,7 +91,7 @@ export default function StoryView({ story, onBack }) {
         <div className="w-12 h-px bg-faint mx-auto mb-8" />
         <p className="font-serif text-2xl italic text-muted mb-4">fin.</p>
         <p className="font-sans text-xs text-faint tracking-widest uppercase">
-          Made with PhotoStory
+          Made with Unkept
         </p>
       </footer>
     </div>

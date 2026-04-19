@@ -1,4 +1,4 @@
-# PhotoStory — Implementation Plan
+# Unkept — Implementation Plan
 
 This plan reflects the revised architecture from the system design review (April 2026). For MVP feature scope and quality bar, see `MVP.md`.
 
