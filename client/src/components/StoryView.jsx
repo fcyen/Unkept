@@ -4,9 +4,7 @@ import TableOfContents from './TableOfContents.jsx';
 
 export default function StoryView({ story, onBack }) {
   const [activeChapter, setActiveChapter] = useState(0);
-  const [chapters, setChapters] = useState(() =>
-    story.chapters.filter((c) => c.photoCount > 0)
-  );
+  const chapters = story.chapters.filter((c) => c.photoCount > 0);
   const chapterRefs = useRef([]);
 
   useEffect(() => {
@@ -30,20 +28,6 @@ export default function StoryView({ story, onBack }) {
 
   const scrollToChapter = (index) => {
     chapterRefs.current[index]?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleReorder = (chapterId, newPhotos) => {
-    setChapters((prev) =>
-      prev.map((ch) => {
-        if (ch.id !== chapterId) return ch;
-        const heroIndex = Math.floor(newPhotos.length / 2);
-        return {
-          ...ch,
-          photos: newPhotos,
-          heroPhoto: newPhotos.length > 0 ? newPhotos[heroIndex] : null,
-        };
-      })
-    );
   };
 
   // Group chapters by date for the cover
@@ -97,11 +81,7 @@ export default function StoryView({ story, onBack }) {
             key={chapter.id}
             ref={(el) => (chapterRefs.current[i] = el)}
           >
-            <Chapter
-              chapter={chapter}
-              chapterNumber={i + 1}
-              onReorder={handleReorder}
-            />
+            <Chapter chapter={chapter} chapterNumber={i + 1} />
           </div>
         ))}
       </main>
@@ -111,7 +91,7 @@ export default function StoryView({ story, onBack }) {
         <div className="w-12 h-px bg-faint mx-auto mb-8" />
         <p className="font-serif text-2xl italic text-muted mb-4">fin.</p>
         <p className="font-sans text-xs text-faint tracking-widest uppercase">
-          Made with PhotoStory
+          Made with Unkept
         </p>
       </footer>
     </div>

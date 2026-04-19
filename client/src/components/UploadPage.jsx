@@ -4,27 +4,9 @@ import { generateThumbnails } from '../lib/thumbnails.js';
 import { matchPhotosToEvents } from '../lib/matcher.js';
 import { resolveLocations } from '../lib/geocode.js';
 
-const SAMPLE_ITINERARY = {
-  trip_name: 'Tokyo Trip 2025',
-  events: [
-    { id: 'evt_001', date: '2025-03-15', activity: 'Breakfast at Tsukiji Market', venue: 'Tsukiji Outer Market', start_time: '08:00', end_time: '09:30' },
-    { id: 'evt_002', date: '2025-03-15', activity: 'Visit Senso-ji Temple', venue: 'Senso-ji, Asakusa', start_time: '10:00', end_time: '12:00' },
-    { id: 'evt_003', date: '2025-03-15', activity: 'Lunch in Akihabara', venue: 'Akihabara Electric Town', start_time: '12:30', end_time: '14:00' },
-    { id: 'evt_004', date: '2025-03-15', activity: 'Shopping in Harajuku', venue: 'Takeshita Street', start_time: '14:30', end_time: '16:30' },
-    { id: 'evt_005', date: '2025-03-15', activity: 'Sunset at Shibuya Crossing', venue: 'Shibuya Scramble Square', start_time: '17:00', end_time: '18:30' },
-    { id: 'evt_006', date: '2025-03-15', activity: 'Dinner in Shinjuku', venue: 'Omoide Yokocho', start_time: '19:00', end_time: '21:00' },
-    { id: 'evt_007', date: '2025-03-16', activity: 'Morning at Meiji Shrine', venue: 'Meiji Jingu', start_time: '08:00', end_time: '10:00' },
-    { id: 'evt_008', date: '2025-03-16', activity: 'Explore Teamlab Borderless', venue: 'Azabudai Hills', start_time: '10:30', end_time: '13:00' },
-    { id: 'evt_009', date: '2025-03-16', activity: 'Afternoon in Odaiba', venue: 'Odaiba Seaside Park', start_time: '14:00', end_time: '17:00' },
-    { id: 'evt_010', date: '2025-03-16', activity: 'Night Ramen Crawl', venue: 'Shinjuku Kabukicho', start_time: '19:00', end_time: '22:00' },
-  ],
-};
-
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
   const [previews, setPreviews] = useState([]); // blob URLs for thumbnails
-  const [itineraryText, setItineraryText] = useState('');
-  const [itineraryMode, setItineraryMode] = useState('none');
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
@@ -68,19 +50,6 @@ export default function UploadPage({ onStoryReady }) {
     setProcessing(true);
 
     try {
-      let itinerary = null;
-      if (itineraryMode === 'sample') {
-        itinerary = SAMPLE_ITINERARY;
-      } else if (itineraryMode === 'custom') {
-        try {
-          itinerary = JSON.parse(itineraryText);
-        } catch {
-          setError('Invalid JSON in itinerary field.');
-          setProcessing(false);
-          return;
-        }
-      }
-
       setProgress(`Reading EXIF data... 0/${photos.length}`);
       const photoData = await extractBatch(photos, (done, total) => {
         setProgress(`Reading EXIF data... ${done}/${total}`);
@@ -91,25 +60,16 @@ export default function UploadPage({ onStoryReady }) {
         setProgress(`Generating thumbnails... ${done}/${total}`);
       });
 
-      setProgress(itinerary ? 'Matching photos to events...' : 'Grouping photos by time...');
-      const chapters = matchPhotosToEvents(photoData, itinerary);
+      setProgress('Grouping photos by time...');
+      const chapters = matchPhotosToEvents(photoData, null);
 
-      // Resolve GPS locations for each chapter
       setProgress('Resolving locations...');
       const { country } = await resolveLocations(chapters, (done, total) => {
         setProgress(`Resolving locations... ${done}/${total}`);
       });
 
-      // Build trip name: "Country, Month Year" or use itinerary name
-      let tripName;
-      if (itinerary) {
-        tripName = itinerary.trip_name;
-      } else {
-        tripName = buildTripName(country, photoData);
-      }
-
       onStoryReady({
-        trip_name: tripName,
+        trip_name: buildTripName(country, photoData),
         chapters,
       });
     } catch (err) {
@@ -125,7 +85,7 @@ export default function UploadPage({ onStoryReady }) {
       <div className="max-w-xl w-full">
         <div className="text-center mb-16">
           <h1 className="font-serif text-5xl md:text-6xl font-semibold text-ink mb-3">
-            PhotoStory
+            Unkept
           </h1>
           <div className="w-12 h-px bg-faint mx-auto mb-4" />
           <p className="font-sans text-muted text-sm tracking-wide">
@@ -196,58 +156,6 @@ export default function UploadPage({ onStoryReady }) {
             Clear all photos
           </button>
         )}
-
-        {/* Itinerary */}
-        <div className="mb-10">
-          <p className="font-sans text-xs tracking-[0.2em] uppercase text-faint mb-4">
-            Itinerary
-          </p>
-          <div className="flex gap-2 mb-4">
-            {[
-              { value: 'none', label: 'None' },
-              { value: 'sample', label: 'Sample' },
-              { value: 'custom', label: 'Custom' },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setItineraryMode(opt.value)}
-                className={`px-4 py-2 text-xs font-sans tracking-wide transition-colors border ${
-                  itineraryMode === opt.value
-                    ? 'border-ink text-ink'
-                    : 'border-faint/40 text-muted hover:border-ink/30 hover:text-ink'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {itineraryMode === 'none' && (
-            <p className="font-sans text-xs text-faint leading-relaxed">
-              Chapters will be auto-generated from photo timestamps &mdash; grouped by date and time gaps.
-            </p>
-          )}
-
-          {itineraryMode === 'custom' && (
-            <textarea
-              value={itineraryText}
-              onChange={(e) => setItineraryText(e.target.value)}
-              placeholder="Paste your itinerary JSON here..."
-              className="w-full h-40 bg-white border border-faint/40 p-4 font-mono text-xs text-ink focus:outline-none focus:border-ink resize-none"
-            />
-          )}
-
-          {itineraryMode === 'sample' && (
-            <div className="border border-faint/40 p-4 max-h-40 overflow-y-auto">
-              <p className="font-serif text-sm text-ink mb-2">{SAMPLE_ITINERARY.trip_name}</p>
-              {SAMPLE_ITINERARY.events.map((evt) => (
-                <p key={evt.id} className="font-sans text-xs text-muted leading-relaxed">
-                  {evt.date} {evt.start_time}&ndash;{evt.end_time} &middot; {evt.activity}
-                </p>
-              ))}
-            </div>
-          )}
-        </div>
 
         {/* Error */}
         {error && (

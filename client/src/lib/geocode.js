@@ -13,7 +13,7 @@ async function reverseGeocode(lat, lon) {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&accept-language=en`,
-      { headers: { 'User-Agent': 'PhotoStory/1.0' } }
+      { headers: { 'User-Agent': 'Unkept/1.0' } }
     );
     if (!res.ok) return null;
 
@@ -49,17 +49,17 @@ async function reverseGeocode(lat, lon) {
 export async function resolveChapterLocation(photos) {
   const withGps = photos.filter((p) => p.latitude != null && p.longitude != null);
   if (withGps.length === 0) {
-    console.log('[PhotoStory] No GPS data in chapter photos');
+    console.log('[Unkept] No GPS data in chapter photos');
     return null;
   }
 
   // Use median photo's coordinates (middle of the sorted set)
   const midIdx = Math.floor(withGps.length / 2);
   const median = withGps[midIdx];
-  console.log(`[PhotoStory] Geocoding: ${median.latitude}, ${median.longitude}`);
+  console.log(`[Unkept] Geocoding: ${median.latitude}, ${median.longitude}`);
 
   const result = await reverseGeocode(median.latitude, median.longitude);
-  console.log(`[PhotoStory] Location resolved:`, result);
+  console.log(`[Unkept] Location resolved:`, result);
   return result;
 }
 

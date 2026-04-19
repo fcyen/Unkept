@@ -1,4 +1,4 @@
-# PhotoStory — Implementation Plan
+# Unkept — Implementation Plan
 
 This plan reflects the revised architecture from the system design review (April 2026). For MVP feature scope and quality bar, see `MVP.md`.
 
@@ -217,12 +217,12 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 |---|---|---|
 | Branch consolidation | done | Consolidated to `main` |
 | PWA manifest | done | `public/manifest.json` + meta tags in `index.html` |
-| Compatibility check | MVP | Gate app on load; block if requirements not met |
+| Compatibility check | done | `lib/compatibility.js` + `CompatibilityBlock.jsx`, gated in `App.jsx` |
 | Local/Server mode badge | post-MVP | Nothing server-side ships in MVP; add when server features land |
-| Remove itinerary UI | MVP | `UploadPage.jsx` — remove sample itinerary, JSON textarea, mode selector |
-| Remove dnd-kit | MVP | `package.json`, `EditablePhotoLayout.jsx` — removes drag-to-reorder within story chapters; native file drop zone in `UploadPage.jsx` is unaffected |
-| Dev route + fixture scenarios | MVP | `/dev` route renders all 3 test scenarios simultaneously (see Testing section) |
-| Vitest setup | MVP | `npm install -D vitest`; add `"test": "vitest run"` script; no further config needed |
+| Remove itinerary UI | done | `UploadPage.jsx` — sample itinerary, JSON textarea, mode selector removed |
+| Remove dnd-kit | done | `@dnd-kit/*` removed from `package.json`; `EditablePhotoLayout.jsx` replaced with static `PhotoLayout.jsx`; `Chapter`/`StoryView` reorder wiring removed |
+| Dev route + fixture scenarios | done | `/dev` route renders all 3 test scenarios simultaneously (see Testing section) |
+| Vitest setup | done | `vitest` installed; `"test": "vitest run"` script in `package.json` |
 
 ### Phase 1 — Pipeline rebuild (Part 1) **[MVP]**
 

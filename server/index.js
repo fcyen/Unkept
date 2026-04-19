@@ -29,5 +29,5 @@ app.use('/api/itinerary', itineraryRouter);
 app.use('/api/story', storyRouter);
 
 app.listen(PORT, () => {
-  console.log(`PhotoStory server running on http://localhost:${PORT}`);
+  console.log(`Unkept server running on http://localhost:${PORT}`);
 });

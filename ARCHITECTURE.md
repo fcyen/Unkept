@@ -1,8 +1,8 @@
-# PhotoStory — Architecture
+# Unkept — Architecture
 
 ## Overview
 
-PhotoStory is a privacy-first web app that transforms a collection of photos (up to 5,000) into a scrollable, editorial-style photo story. It extracts EXIF metadata, generates thumbnails, deduplicates, clusters photos into day-based chapters, and renders a magazine-style narrative — all in the browser.
+Unkept is a privacy-first web app that transforms a collection of photos (up to 5,000) into a scrollable, editorial-style photo story. It extracts EXIF metadata, generates thumbnails, deduplicates, clusters photos into day-based chapters, and renders a magazine-style narrative — all in the browser.
 
 **Photos never leave the user's device during processing.** Data only leaves on explicit user action (Share, Generate Captions). Deployable as a static site to Vercel/Netlify.
 
