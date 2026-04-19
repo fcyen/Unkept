@@ -1,12 +1,8 @@
-import EditablePhotoLayout from './EditablePhotoLayout.jsx';
+import PhotoLayout from './PhotoLayout.jsx';
 import FadeIn from './FadeIn.jsx';
 
-export default function Chapter({ chapter, chapterNumber, onReorder }) {
-  const { id, activity, venue, location, date, start_time, end_time, photos, heroPhoto } = chapter;
-
-  const handleReorder = (newPhotos) => {
-    onReorder(id, newPhotos);
-  };
+export default function Chapter({ chapter, chapterNumber }) {
+  const { activity, venue, location, date, start_time, end_time, photos, heroPhoto } = chapter;
 
   return (
     <article className="py-16 md:py-24">
@@ -49,11 +45,7 @@ export default function Chapter({ chapter, chapterNumber, onReorder }) {
       )}
 
       {/* Photo Layout */}
-      <EditablePhotoLayout
-        photos={photos}
-        heroPhoto={heroPhoto}
-        onReorder={handleReorder}
-      />
+      <PhotoLayout photos={photos} heroPhoto={heroPhoto} />
     </article>
   );
 }
