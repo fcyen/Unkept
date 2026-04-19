@@ -1,26 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { extractDates, runPhase1, PHASES } from './orchestrator.js';
-
-describe('extractDates', () => {
-  it('returns unique YYYY-MM-DD dates sorted ascending', () => {
-    const photos = [
-      { timestamp: '2025-03-16T10:00:00Z' },
-      { timestamp: '2025-03-15T08:00:00Z' },
-      { timestamp: '2025-03-15T22:00:00Z' },
-      { timestamp: null },
-      { timestamp: 'not-a-date' },
-    ];
-    const result = extractDates(photos);
-    expect(result).toEqual([toLocalDate('2025-03-15T08:00:00Z'), toLocalDate('2025-03-16T10:00:00Z')]);
-  });
-
-  it('returns empty array when no photos have timestamps', () => {
-    expect(extractDates([{ timestamp: null }, {}])).toEqual([]);
-  });
-});
+import { runPhase1, PHASES } from './orchestrator.js';
 
 describe('runPhase1', () => {
-  it('walks phases in order, threads survey config into heroSelect, returns a valid skeleton shape', async () => {
+  it('walks stages in order, returns a valid skeleton, and strips File refs', async () => {
     const phases = [];
     const photo = {
       id: 'photo_0',
@@ -35,104 +17,96 @@ describe('runPhase1', () => {
       faces: null,
     };
 
-    const exifStage = vi.fn().mockResolvedValue([photo]);
-    const dedupStage = vi.fn().mockResolvedValue({
-      photos: [photo],
-      burstGroups: [],
-      burstCandidates: [],
-    });
-    const clusterStage = vi.fn().mockResolvedValue({
-      clusters: [[photo]],
-      burstGroups: [],
-      burstCandidates: [],
-    });
-    const heroSelectStage = vi.fn().mockImplementation(async (input) => ({
-      clusters: input.clusters,
-      heroIds: new Set([photo.id]),
-      burstGroups: [],
-      burstCandidates: [],
-    }));
-    const chapterBuilderStage = vi.fn().mockResolvedValue({
-      chapters: [{
-        id: 'chapter_001',
-        photoIds: [photo.id],
-        heroPhotoId: photo.id,
-        date: '2025-03-15',
-        coords: { lat: 1, lng: 2 },
-      }],
-      photos: new Map([[photo.id, photo]]),
-      burstGroups: [],
-    });
-    const thumbnailStage = vi.fn().mockImplementation(async (input) => {
-      for (const [, p] of input.photos) {
-        p.thumbnailUrl = 'data:image/jpeg;base64,AAA';
-      }
-      return input;
-    });
-    const qualityScoreStage = vi.fn().mockImplementation(async (input) => {
-      for (const [, p] of input.photos) {
-        p.qualityScore = 0.5;
-      }
-      return input;
+    const calls = [];
+    const trace = (name, output) => async (input, options, onProgress) => {
+      calls.push(name);
+      if (onProgress) onProgress(1, 1);
+      return typeof output === 'function' ? output(input, options) : output;
+    };
+
+    const heroSelectStage = vi.fn().mockImplementation(async (input) => {
+      calls.push('heroSelect');
+      return {
+        clusters: input.clusters,
+        heroIds: new Set([photo.id]),
+        burstGroups: [],
+        burstCandidates: [],
+      };
     });
 
-    let capturedDates = null;
     const skeleton = await runPhase1([{}], {
       onPhase: (p) => phases.push(p),
-      onSurveyDates: (d) => { capturedDates = d; },
-      getSurveyConfig: async () => ({ highlightDates: ['2025-03-15'] }),
       stages: {
-        exif: exifStage,
-        dedup: dedupStage,
-        cluster: clusterStage,
+        exif: trace('exif', [photo]),
+        dedup: trace('dedup', { photos: [photo], burstGroups: [], burstCandidates: [] }),
+        cluster: trace('cluster', { clusters: [[photo]], burstGroups: [], burstCandidates: [] }),
         heroSelect: heroSelectStage,
-        chapterBuilder: chapterBuilderStage,
-        thumbnail: thumbnailStage,
-        qualityScore: qualityScoreStage,
+        chapterBuilder: trace('chapterBuilder', {
+          chapters: [{
+            id: 'chapter_001',
+            photoIds: [photo.id],
+            heroPhotoId: photo.id,
+            date: '2025-03-15',
+            coords: { lat: 1, lng: 2 },
+          }],
+          photos: new Map([[photo.id, photo]]),
+          burstGroups: [],
+        }),
+        thumbnail: trace('thumbnail', (input) => {
+          for (const [, p] of input.photos) p.thumbnailUrl = 'data:image/jpeg;base64,AAA';
+          return input;
+        }),
+        qualityScore: trace('qualityScore', (input) => input),
       },
     });
 
-    expect(phases).toEqual([
-      PHASES.PHASE_1A,
-      PHASES.AWAITING_SURVEY,
-      PHASES.PHASE_1B,
-      PHASES.DONE,
+    expect(phases).toEqual([PHASES.RUNNING, PHASES.DONE]);
+    expect(calls).toEqual([
+      'exif',
+      'dedup',
+      'cluster',
+      'heroSelect',
+      'chapterBuilder',
+      'thumbnail',
+      'qualityScore',
     ]);
-    expect(capturedDates).toEqual(['2025-03-15']);
 
-    // Survey config was threaded into heroSelect
+    // heroSelect always receives an empty highlightDates list now that the
+    // survey is gone — the option is kept so heroSelect's signature is stable.
     expect(heroSelectStage).toHaveBeenCalledWith(
       expect.anything(),
-      { highlightDates: ['2025-03-15'] },
+      { highlightDates: [] },
       expect.any(Function),
     );
 
-    // Skeleton has expected top-level shape
     expect(skeleton.version).toBe('1.0');
     expect(skeleton.chapters).toHaveLength(1);
     expect(skeleton.photos[photo.id]).toBeDefined();
-    expect(skeleton.meta.surveyResponses).toEqual({ highlightDates: ['2025-03-15'] });
-
-    // File reference was stripped before serialisation
     expect(skeleton.photos[photo.id].file).toBeUndefined();
   });
 
-  it('defaults highlightDates to [] when survey resolves with empty object (skip/timeout)', async () => {
+  it('reports stage progress events', async () => {
     const photo = basicPhoto();
-    const heroSelectStage = vi.fn().mockImplementation(async (input) => ({
-      clusters: input.clusters,
-      heroIds: new Set([photo.id]),
-      burstGroups: [],
-      burstCandidates: [],
-    }));
+    const events = [];
 
     await runPhase1([{}], {
-      getSurveyConfig: async () => ({}),
+      onProgress: (e) => events.push(e),
       stages: {
-        exif: async () => [photo],
-        dedup: async () => ({ photos: [photo], burstGroups: [], burstCandidates: [] }),
-        cluster: async () => ({ clusters: [[photo]], burstGroups: [], burstCandidates: [] }),
-        heroSelect: heroSelectStage,
+        exif: async (_, __, onProgress) => { onProgress(1, 1); return [photo]; },
+        dedup: async (_, __, onProgress) => {
+          onProgress(1, 1);
+          return { photos: [photo], burstGroups: [], burstCandidates: [] };
+        },
+        cluster: async (_, __, onProgress) => {
+          onProgress(1, 1);
+          return { clusters: [[photo]], burstGroups: [], burstCandidates: [] };
+        },
+        heroSelect: async (input) => ({
+          clusters: input.clusters,
+          heroIds: new Set([photo.id]),
+          burstGroups: [],
+          burstCandidates: [],
+        }),
         chapterBuilder: async () => ({
           chapters: [{ id: 'chapter_001', photoIds: [photo.id], heroPhotoId: photo.id, date: '2025-03-15', coords: null }],
           photos: new Map([[photo.id, photo]]),
@@ -146,11 +120,8 @@ describe('runPhase1', () => {
       },
     });
 
-    expect(heroSelectStage).toHaveBeenCalledWith(
-      expect.anything(),
-      { highlightDates: [] },
-      expect.any(Function),
-    );
+    const stages = events.map((e) => e.stage);
+    expect(stages).toEqual(expect.arrayContaining(['exif', 'dedup', 'cluster']));
   });
 });
 
@@ -167,11 +138,4 @@ function basicPhoto() {
     qualityScore: null,
     faces: null,
   };
-}
-
-// Timestamps are parsed in local time by `extractDates`, so we can't assume
-// UTC. Round-trip through the same Date API to compute the expected key.
-function toLocalDate(iso) {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

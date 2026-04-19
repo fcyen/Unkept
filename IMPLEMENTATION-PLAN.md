@@ -234,11 +234,11 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - `stages/cluster.test.js` — correct grouping by date; no-timestamp photos land in undated group; single-photo day forms its own chapter; unsorted input produces same output as sorted
 - HEIC handling: attempt `createImageBitmap()` per file; catch failure; mark photo as `thumbnailFailed: true`; continue pipeline; surface count to UI for a non-blocking notice
 
-**PR 1B: Survey component + pipeline checkpoint** **[done]**
-- `SurveyModal.jsx` — single question (highlight dates), 60s timeout, skip option; auto-skips on single-day trips
+**PR 1B: Pipeline orchestrator + hook** **[done]**
 - `pipeline/runner.js` — `runPipelineWithCheckpoints` supports pause/wait/resume (available for reuse)
-- `pipeline/orchestrator.js` — pure async orchestrator: EXIF → dedup → cluster → survey checkpoint → heroSelect → chapterBuilder → thumbnail → qualityScore → assembleSkeleton
-- `usePipeline.js` hook — thin React wrapper over the orchestrator; exposes `phase`, `progress`, `surveyDates`, `submitSurvey`, `skipSurvey`, `result`
+- `pipeline/orchestrator.js` — pure async orchestrator: EXIF → dedup → cluster → heroSelect → chapterBuilder → thumbnail → qualityScore → assembleSkeleton
+- `usePipeline.js` hook — thin React wrapper over the orchestrator; exposes `phase`, `progress`, `result`, `start`
+- **Survey dropped from MVP** (felt awkward in testing). `heroSelectStage` keeps its `highlightDates` option but we always pass `[]` for now; the agentic survey in Phase 5A can re-introduce a non-blocking prompt later.
 
 **PR 1C: Expensive pipeline stages** **[done]**
 - `stages/heroSelect.js` — survey-weighted selection (runs before thumbnail gen)
@@ -254,7 +254,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 
 **Integration** **[done]**
 - `lib/skeletonToLegacyStory.js` — adapter from Story Skeleton to the legacy `StoryView`/`Chapter`/`PhotoLayout` shape so the magazine renderer runs on top of the new pipeline. Temporary — deleted once PR 2B replaces `StoryView` with the skeleton-native slideshow.
-- `UploadPage.jsx` — drives `usePipeline`, shows `SurveyModal` during Phase 1A, resolves locations against the adapted chapters, hands a legacy story to `StoryView`
+- `UploadPage.jsx` — drives `usePipeline`, animates a cycling per-stage status phrase on the Generate button, resolves locations against the adapted chapters, hands a legacy story to `StoryView`
 - Legacy `lib/exif.js`, `lib/thumbnails.js`, `lib/matcher.js` and orphan `workers/thumbnail.worker.js` removed
 
 ### Phase 2 — Story renderer (Part 2) **[MVP]**

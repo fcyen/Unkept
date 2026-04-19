@@ -2,17 +2,49 @@ import { useEffect, useRef, useState } from 'react';
 import { usePipeline, PHASES } from '../lib/usePipeline.js';
 import { skeletonToLegacyStory } from '../lib/skeletonToLegacyStory.js';
 import { resolveLocations } from '../lib/geocode.js';
-import SurveyModal from './SurveyModal.jsx';
 
-const PROGRESS_COPY = {
-  exif: 'Reading timestamps',
-  dedup: 'Finding duplicates',
-  cluster: 'Grouping by day',
-  heroSelect: 'Choosing highlights',
-  chapterBuilder: 'Building chapters',
-  thumbnail: 'Generating thumbnails',
-  qualityScore: 'Scoring quality',
+// Each pipeline stage cycles through several phrasings while it runs, so
+// the button feels alive instead of stuck on a single sentence.
+const STAGE_PHRASES = {
+  exif: [
+    'Reading timestamps',
+    'Extracting image data',
+    'Sorting by capture time',
+  ],
+  dedup: [
+    'Finding duplicates',
+    'Filtering the photos',
+    'Comparing fingerprints',
+  ],
+  cluster: [
+    'Grouping by day',
+    'Stitching moments together',
+    'Sketching the chapters',
+  ],
+  heroSelect: [
+    'Choosing highlights',
+    'Spotting the best shots',
+    'Picking hero moments',
+  ],
+  chapterBuilder: [
+    'Building chapters',
+    'Drafting the story',
+    'Laying out the arc',
+  ],
+  thumbnail: [
+    'Generating thumbnails',
+    'Resizing for the page',
+    'Preparing the artwork',
+  ],
+  qualityScore: [
+    'Scoring quality',
+    'Measuring sharpness',
+    'Ranking the favourites',
+  ],
 };
+
+const STARTING_PHRASES = ['Warming up', 'Getting started'];
+const PHRASE_INTERVAL_MS = 1800;
 
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
@@ -29,11 +61,9 @@ export default function UploadPage({ onStoryReady }) {
     pipeline.phase !== PHASES.DONE &&
     pipeline.phase !== PHASES.ERROR;
 
-  const surveyOpen = pipeline.phase !== PHASES.IDLE && pipeline.surveyDates.length > 0;
-
   // When the skeleton lands, run geocoding, then adapt to the legacy story
-  // shape StoryView understands. This whole branch goes away once PR 2B
-  // replaces StoryView with the skeleton-native slideshow.
+  // shape StoryView understands. This whole branch goes away once the
+  // skeleton-native slideshow is wired into the main route.
   useEffect(() => {
     if (!pipeline.result) return;
     if (handledResultRef.current === pipeline.result) return;
@@ -183,39 +213,75 @@ export default function UploadPage({ onStoryReady }) {
           </div>
         )}
 
-        <button
+        <ProgressButton
+          processing={processing}
+          pipeline={pipeline}
+          geocodingProgress={geocodingProgress}
           onClick={handleGenerate}
-          disabled={processing}
-          className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
-        >
-          {processing ? renderProgress(pipeline, geocodingProgress) : 'Generate Story'}
-        </button>
+        />
       </div>
-
-      <SurveyModal
-        open={surveyOpen}
-        dates={pipeline.surveyDates}
-        pipelineReady={pipeline.phase === PHASES.AWAITING_SURVEY}
-        onSubmit={pipeline.submitSurvey}
-        onSkip={pipeline.skipSurvey}
-      />
     </div>
   );
 }
 
-function renderProgress(pipeline, geocodingProgress) {
-  if (geocodingProgress) {
+/**
+ * Generate / progress button. Cycles through stage-specific phrases on a
+ * timer so the UI feels alive even when a stage holds the main thread for
+ * a few seconds.
+ */
+function ProgressButton({ processing, pipeline, geocodingProgress, onClick }) {
+  const stage = geocodingProgress
+    ? 'geocoding'
+    : pipeline.progress?.stage || (processing ? 'starting' : null);
+
+  const phrase = useCyclingPhrase(stage, processing && !geocodingProgress);
+
+  let label;
+  if (!processing) {
+    label = 'Generate Story';
+  } else if (geocodingProgress) {
     const { done, total } = geocodingProgress;
-    return `Resolving locations... ${done}/${total}`;
+    label = `Resolving locations… ${done}/${total}`;
+  } else {
+    const p = pipeline.progress;
+    const counter = p && p.total > 0 ? ` ${p.progress}/${p.total}` : '';
+    label = `${phrase}…${counter}`;
   }
-  if (pipeline.phase === PHASES.AWAITING_SURVEY) {
-    return 'Waiting for your answers...';
-  }
-  const p = pipeline.progress;
-  if (!p) return 'Processing...';
-  const copy = PROGRESS_COPY[p.stage] || p.stage;
-  if (p.total > 0) return `${copy}... ${p.progress}/${p.total}`;
-  return `${copy}...`;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={processing}
+      className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
+    >
+      <span
+        key={`${stage}-${phrase}`}
+        className={processing ? 'inline-block animate-phrase-fade' : undefined}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Returns the current phrase for a stage, cycling through the stage's
+ * phrase list every PHRASE_INTERVAL_MS while `active` is true. Resets
+ * when `stage` changes.
+ */
+function useCyclingPhrase(stage, active) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+    if (!active || !stage) return undefined;
+    const id = setInterval(() => setIndex((i) => i + 1), PHRASE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [stage, active]);
+
+  if (!stage) return '';
+  const list = STAGE_PHRASES[stage] || STARTING_PHRASES;
+  return list[index % list.length];
 }
 
 function buildTripName(country, skeleton) {
