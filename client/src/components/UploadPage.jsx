@@ -1,20 +1,76 @@
-import { useState, useRef } from 'react';
-import { extractBatch } from '../lib/exif.js';
-import { generateThumbnails } from '../lib/thumbnails.js';
-import { matchPhotosToEvents } from '../lib/matcher.js';
+import { useEffect, useRef, useState } from 'react';
+import { usePipeline, PHASES } from '../lib/usePipeline.js';
+import { skeletonToLegacyStory } from '../lib/skeletonToLegacyStory.js';
 import { resolveLocations } from '../lib/geocode.js';
+import SurveyModal from './SurveyModal.jsx';
+
+const PROGRESS_COPY = {
+  exif: 'Reading timestamps',
+  dedup: 'Finding duplicates',
+  cluster: 'Grouping by day',
+  heroSelect: 'Choosing highlights',
+  chapterBuilder: 'Building chapters',
+  thumbnail: 'Generating thumbnails',
+  qualityScore: 'Scoring quality',
+};
 
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
-  const [previews, setPreviews] = useState([]); // blob URLs for thumbnails
-  const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState('');
+  const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
+  const [geocodingProgress, setGeocodingProgress] = useState(null);
   const fileInputRef = useRef(null);
+  const handledResultRef = useRef(null);
+
+  const pipeline = usePipeline();
+
+  const processing =
+    pipeline.phase !== PHASES.IDLE &&
+    pipeline.phase !== PHASES.DONE &&
+    pipeline.phase !== PHASES.ERROR;
+
+  const surveyOpen = pipeline.phase !== PHASES.IDLE && pipeline.surveyDates.length > 0;
+
+  // When the skeleton lands, run geocoding, then adapt to the legacy story
+  // shape StoryView understands. This whole branch goes away once PR 2B
+  // replaces StoryView with the skeleton-native slideshow.
+  useEffect(() => {
+    if (!pipeline.result) return;
+    if (handledResultRef.current === pipeline.result) return;
+    handledResultRef.current = pipeline.result;
+
+    (async () => {
+      try {
+        const story = skeletonToLegacyStory(pipeline.result);
+
+        setGeocodingProgress({ done: 0, total: story.chapters.length });
+        const { country } = await resolveLocations(
+          story.chapters,
+          (done, total) => setGeocodingProgress({ done, total }),
+        );
+        setGeocodingProgress(null);
+
+        previews.forEach((url) => URL.revokeObjectURL(url));
+        setPreviews([]);
+        setPhotos([]);
+
+        onStoryReady({
+          trip_name: buildTripName(country, pipeline.result),
+          chapters: story.chapters,
+        });
+      } catch (err) {
+        setError(err.message || 'Failed to finish story.');
+        setGeocodingProgress(null);
+      }
+    })();
+  }, [pipeline.result, previews, onStoryReady]);
+
+  useEffect(() => {
+    if (pipeline.error) setError(pipeline.error.message || 'Pipeline failed.');
+  }, [pipeline.error]);
 
   const addPhotos = (files) => {
     setPhotos((prev) => [...prev, ...files]);
-    // Generate quick previews (small, fast)
     for (const file of files) {
       const url = URL.createObjectURL(file);
       setPreviews((prev) => [...prev, url]);
@@ -30,7 +86,7 @@ export default function UploadPage({ onStoryReady }) {
   const handlePhotoDrop = (e) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter((f) =>
-      /\.(jpg|jpeg|png|heic|heif|webp|tiff)$/i.test(f.name)
+      /\.(jpg|jpeg|png|heic|heif|webp|tiff)$/i.test(f.name),
     );
     addPhotos(files);
   };
@@ -40,44 +96,13 @@ export default function UploadPage({ onStoryReady }) {
     addPhotos(files);
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     if (photos.length === 0) {
       setError('Please add some photos first.');
       return;
     }
-
     setError('');
-    setProcessing(true);
-
-    try {
-      setProgress(`Reading EXIF data... 0/${photos.length}`);
-      const photoData = await extractBatch(photos, (done, total) => {
-        setProgress(`Reading EXIF data... ${done}/${total}`);
-      });
-
-      setProgress(`Generating thumbnails... 0/${photos.length}`);
-      await generateThumbnails(photoData, (done, total) => {
-        setProgress(`Generating thumbnails... ${done}/${total}`);
-      });
-
-      setProgress('Grouping photos by time...');
-      const chapters = matchPhotosToEvents(photoData, null);
-
-      setProgress('Resolving locations...');
-      const { country } = await resolveLocations(chapters, (done, total) => {
-        setProgress(`Resolving locations... ${done}/${total}`);
-      });
-
-      onStoryReady({
-        trip_name: buildTripName(country, photoData),
-        chapters,
-      });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setProcessing(false);
-      setProgress('');
-    }
+    pipeline.start(photos);
   };
 
   return (
@@ -93,7 +118,6 @@ export default function UploadPage({ onStoryReady }) {
           </p>
         </div>
 
-        {/* Photo Upload */}
         <div
           className="border border-faint/40 rounded-sm text-center cursor-pointer hover:border-ink/30 transition-colors mb-4 overflow-hidden"
           onDragOver={(e) => e.preventDefault()}
@@ -126,11 +150,7 @@ export default function UploadPage({ onStoryReady }) {
               <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 mb-3">
                 {previews.slice(0, 24).map((url, i) => (
                   <div key={i} className="aspect-square overflow-hidden bg-faint/10">
-                    <img
-                      src={url}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={url} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
                 {previews.length > 24 && (
@@ -148,7 +168,7 @@ export default function UploadPage({ onStoryReady }) {
           )}
         </div>
 
-        {photos.length > 0 && (
+        {photos.length > 0 && !processing && (
           <button
             onClick={(e) => { e.stopPropagation(); clearPhotos(); }}
             className="font-sans text-xs text-muted hover:text-ink tracking-wide mb-8 block"
@@ -157,39 +177,55 @@ export default function UploadPage({ onStoryReady }) {
           </button>
         )}
 
-        {/* Error */}
         {error && (
           <div className="border border-red-300 bg-red-50 p-3 mb-6">
             <p className="font-sans text-xs text-red-600">{error}</p>
           </div>
         )}
 
-        {/* Generate Button */}
         <button
           onClick={handleGenerate}
           disabled={processing}
           className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
         >
-          {processing ? progress || 'Processing...' : 'Generate Story'}
+          {processing ? renderProgress(pipeline, geocodingProgress) : 'Generate Story'}
         </button>
       </div>
+
+      <SurveyModal
+        open={surveyOpen}
+        dates={pipeline.surveyDates}
+        pipelineReady={pipeline.phase === PHASES.AWAITING_SURVEY}
+        onSubmit={pipeline.submitSurvey}
+        onSkip={pipeline.skipSurvey}
+      />
     </div>
   );
 }
 
-function buildTripName(country, photoData) {
-  // Get month/year from the earliest photo timestamp
-  const timestamps = photoData
-    .map((p) => p.timestamp)
-    .filter(Boolean)
-    .sort();
+function renderProgress(pipeline, geocodingProgress) {
+  if (geocodingProgress) {
+    const { done, total } = geocodingProgress;
+    return `Resolving locations... ${done}/${total}`;
+  }
+  if (pipeline.phase === PHASES.AWAITING_SURVEY) {
+    return 'Waiting for your answers...';
+  }
+  const p = pipeline.progress;
+  if (!p) return 'Processing...';
+  const copy = PROGRESS_COPY[p.stage] || p.stage;
+  if (p.total > 0) return `${copy}... ${p.progress}/${p.total}`;
+  return `${copy}...`;
+}
 
-  if (timestamps.length === 0 && !country) return 'My Photo Story';
+function buildTripName(country, skeleton) {
+  const dateRange = skeleton?.meta?.dateRange;
+  if (!dateRange && !country) return 'My Photo Story';
 
   let datePart = '';
-  if (timestamps.length > 0) {
-    const earliest = new Date(timestamps[0]);
-    const latest = new Date(timestamps[timestamps.length - 1]);
+  if (dateRange) {
+    const earliest = new Date(dateRange.start + 'T00:00:00');
+    const latest = new Date(dateRange.end + 'T00:00:00');
     const monthFmt = (d) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
     if (earliest.getMonth() === latest.getMonth() && earliest.getFullYear() === latest.getFullYear()) {

@@ -226,7 +226,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 
 ### Phase 1 — Pipeline rebuild (Part 1) **[MVP]**
 
-**PR 1A: Cheap pipeline stages** **[MVP]**
+**PR 1A: Cheap pipeline stages** **[done]**
 - `stages/exif.js` — wraps Web Worker, returns PhotoData[]
 - `stages/dedup.js` — exact + perceptual hash; revokes blob URLs for rejects; preserves burst groups in `skeleton.burstGroups` (near-duplicate clusters, representative + candidate IDs) rather than discarding them — enables live-photo rendering in PR 2E without a pipeline rewrite
 - `stages/cluster.js` — day strategy (default), time-gap strategy
@@ -234,22 +234,28 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - `stages/cluster.test.js` — correct grouping by date; no-timestamp photos land in undated group; single-photo day forms its own chapter; unsorted input produces same output as sorted
 - HEIC handling: attempt `createImageBitmap()` per file; catch failure; mark photo as `thumbnailFailed: true`; continue pipeline; surface count to UI for a non-blocking notice
 
-**PR 1B: Survey component + pipeline checkpoint** **[MVP — secondary]**
-- `SurveyModal.jsx` — 2–3 questions, timeout logic, skip option
-- Pipeline runner extended with checkpoint support (pause, wait for config, resume)
-- `usePipeline.js` hook — orchestrates Phase 1A → survey → Phase 1B
+**PR 1B: Survey component + pipeline checkpoint** **[done]**
+- `SurveyModal.jsx` — single question (highlight dates), 60s timeout, skip option; auto-skips on single-day trips
+- `pipeline/runner.js` — `runPipelineWithCheckpoints` supports pause/wait/resume (available for reuse)
+- `pipeline/orchestrator.js` — pure async orchestrator: EXIF → dedup → cluster → survey checkpoint → heroSelect → chapterBuilder → thumbnail → qualityScore → assembleSkeleton
+- `usePipeline.js` hook — thin React wrapper over the orchestrator; exposes `phase`, `progress`, `surveyDates`, `submitSurvey`, `skipSurvey`, `result`
 
-**PR 1C: Expensive pipeline stages** **[MVP]**
+**PR 1C: Expensive pipeline stages** **[done]**
 - `stages/heroSelect.js` — survey-weighted selection (runs before thumbnail gen)
 - `stages/chapterBuilder.js` — selects which photos appear in story; output drives thumbnail generation
-- `stages/thumbnail.js` — Web Worker, OffscreenCanvas; selected photos only; 200px standard + 400px hero (desktop); HEIC graceful degradation
+- `stages/thumbnail.js` — OffscreenCanvas; selected photos only; 200px standard + 400px hero (desktop); HEIC graceful degradation. (Currently runs on main thread; worker hoist is a later follow-up.)
 - `stages/qualityScore.js` — blur detection (Laplacian variance) on 200px thumbnails
 - `lib/validateSkeleton.js` — `isValidSkeleton(json)` schema validator; used in tests and in dev-mode runtime assertions
 - `stages/chapterBuilder.test.js` — output passes `isValidSkeleton`; all chapters have a heroPhotoId; no File objects or blob URLs in output
 
-**PR 1D: Memory manager** **[MVP]**
+**PR 1D: Memory manager** **[done]**
 - `lib/memoryManager.js` — tracks blob URLs by stage, revokes on trigger
-- Integration into pipeline runner
+- Integrated into the Phase 1 orchestrator (`stripFileReferences` after thumbnail, `revokeAll` on completion)
+
+**Integration** **[done]**
+- `lib/skeletonToLegacyStory.js` — adapter from Story Skeleton to the legacy `StoryView`/`Chapter`/`PhotoLayout` shape so the magazine renderer runs on top of the new pipeline. Temporary — deleted once PR 2B replaces `StoryView` with the skeleton-native slideshow.
+- `UploadPage.jsx` — drives `usePipeline`, shows `SurveyModal` during Phase 1A, resolves locations against the adapted chapters, hands a legacy story to `StoryView`
+- Legacy `lib/exif.js`, `lib/thumbnails.js`, `lib/matcher.js` and orphan `workers/thumbnail.worker.js` removed
 
 ### Phase 2 — Story renderer (Part 2) **[MVP]**
 
