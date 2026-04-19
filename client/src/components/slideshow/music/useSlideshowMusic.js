@@ -11,20 +11,16 @@
  *   enabled    — current preference (default: on).
  *   active     — whether sound is currently playing (true between
  *                start() and fadeOut() complete, gated by enabled).
- *
- * Implementation note: the track is currently a procedural Web Audio
- * pad (see `ambientPad.js`). The `loadTrack` factory is the swap point
- * — replace with an `<audio>`-element wrapper once a real Opus track is
- * bundled in `/public/audio/`.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createAmbientPad } from './ambientPad.js';
 
+const TRACK_URL = '/audio/street-life.mp3';
 const STORAGE_KEY = 'photostory.music.enabled';
 const FADE_IN_MS = 2000;
 const FADE_OUT_MS = 2000;
 const TOGGLE_FADE_MS = 400;
+const PEAK_GAIN = 0.75;
 
 function readPref() {
   try {
@@ -39,14 +35,60 @@ function readPref() {
 function writePref(enabled) {
   try {
     window.localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off');
-  } catch { /* private mode etc. — ignore */ }
+  } catch { /* private mode — ignore */ }
+}
+
+/**
+ * Wraps an HTMLAudioElement in the { fadeIn, fadeOut, stop } interface.
+ * Gain control goes through a Web Audio GainNode so the fade curves are
+ * identical to the procedural-pad path.
+ */
+function createHtmlAudioTrack(ctx, url) {
+  const audio = new Audio(url);
+  audio.loop = true;
+
+  const source = ctx.createMediaElementSource(audio);
+  const master = ctx.createGain();
+  master.gain.value = 0;
+  source.connect(master);
+  master.connect(ctx.destination);
+
+  let stopped = false;
+  let fadeOutTimer = null;
+
+  return {
+    fadeIn(ms = FADE_IN_MS, target = PEAK_GAIN) {
+      if (stopped) return;
+      if (fadeOutTimer) { clearTimeout(fadeOutTimer); fadeOutTimer = null; }
+      if (audio.paused) audio.play().catch(() => {});
+      const now = ctx.currentTime;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(target, now + ms / 1000);
+    },
+    fadeOut(ms = FADE_OUT_MS) {
+      if (stopped) return;
+      const now = ctx.currentTime;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(0, now + ms / 1000);
+      fadeOutTimer = setTimeout(() => {
+        if (!stopped) audio.pause();
+        fadeOutTimer = null;
+      }, ms);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      if (fadeOutTimer) { clearTimeout(fadeOutTimer); fadeOutTimer = null; }
+      audio.pause();
+      audio.src = '';
+    },
+  };
 }
 
 function loadTrack(ctx) {
-  // Single seam: swap this out for `htmlAudioTrack(url)` once a real
-  // bundled track exists. The returned object must match the
-  // `{ fadeIn, fadeOut, stop }` shape.
-  return createAmbientPad(ctx);
+  return createHtmlAudioTrack(ctx, TRACK_URL);
 }
 
 export function useSlideshowMusic() {
@@ -58,8 +100,7 @@ export function useSlideshowMusic() {
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
-  // Tear down on unmount so we don't leak an AudioContext if the player
-  // is exited mid-playback.
+  // Tear down on unmount so we don't leak an AudioContext when the player exits.
   useEffect(() => {
     return () => {
       if (trackRef.current) {
@@ -79,7 +120,7 @@ export function useSlideshowMusic() {
     if (!Ctx) return null;
     const ctx = new Ctx();
     if (ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch { /* user gesture required — caller handles */ }
+      try { await ctx.resume(); } catch { /* caller is in user gesture */ }
     }
     ctxRef.current = ctx;
     trackRef.current = loadTrack(ctx);
