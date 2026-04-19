@@ -269,7 +269,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - Photo card selection: hero + next N−1 by quality score. Layout chosen based on orientation mix of chapter's selected photos — see PhotoCardFrame layouts in PR 2B. Hero is always included.
 - Frame assembly: one cover, one divider per chapter, one photo card per chapter (MVP), one coda
 
-**PR 2B: Wrapped-style slideshow player** **[MVP]**
+**PR 2B: Wrapped-style slideshow player** **[done]**
 - `SlideshowPlayer.jsx` — accepts Story prop; state machine (idle → playing → paused → finished); auto-advances through frames
 - Frame components:
   - `CoverFrame.jsx` — trip title, date range, stat line, "Ready to relive your trip" CTA (this tap starts music + auto-advance)
@@ -295,7 +295,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 - Integrates with pipeline events from `usePipeline.js` (PR 1B)
 - Handoff: on pipeline + geocoding complete, transitions to the slideshow cover frame (which waits for the user's tap)
 
-**PR 2D: Music** **[MVP]**
+**PR 2D: Music** **[done]**
 - 2–3 short ambient loops bundled with the app (~30–60s each, Opus-compressed, ~1–2MB total); royalty-free (Pixabay Music, Uppbeat, or similar)
 - Audio starts on cover CTA tap (resolves mobile autoplay restriction); fades in over 2s; loops for slideshow duration; fades out over 2s at coda
 - Play/pause affordance visible in tap-to-reveal controls
