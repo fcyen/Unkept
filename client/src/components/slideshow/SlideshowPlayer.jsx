@@ -258,48 +258,57 @@ export default function SlideshowPlayer({ story, onExit }) {
   }, [currentFrame, photos, exiting, status, startPlayback, replay]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black text-white overflow-hidden select-none touch-none"
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <ProgressBar
-        frames={frames}
-        frameIndex={frameIndex}
-        durationMs={duration}
-        visible={progressVisible}
-        paused={status === 'paused'}
-        runKey={runKey}
-      />
+    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none">
+      {/*
+        On desktop the slideshow is shown inside a phone-shaped frame
+        (9:19.5 aspect, the iPhone Pro ratio) — letterboxed by the outer
+        black backdrop. On mobile (<md) it fills the viewport. Pointer
+        handlers live on the phone-frame div so taps in the letterbox
+        don't register as next/prev.
+      */}
+      <div
+        className="relative bg-black text-white overflow-hidden touch-none w-full h-full md:w-auto md:h-screen md:max-w-full md:aspect-[9/19.5]"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <ProgressBar
+          frames={frames}
+          frameIndex={frameIndex}
+          durationMs={duration}
+          visible={progressVisible}
+          paused={status === 'paused'}
+          runKey={runKey}
+        />
 
-      {/* Frame key forces entry animations to retrigger on each navigation. */}
-      <div key={currentFrame.id} className="absolute inset-0">
-        {frameContent}
+        {/* Frame key forces entry animations to retrigger on each navigation. */}
+        <div key={currentFrame.id} className="absolute inset-0">
+          {frameContent}
+        </div>
+
+        <MusicToggle
+          enabled={music.enabled}
+          onToggle={music.toggle}
+          visible={progressVisible}
+        />
+
+        {onExit && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExit();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            className="absolute top-3 right-3 z-30 w-9 h-9 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60 text-lg leading-none"
+            aria-label="Close slideshow"
+          >
+            ×
+          </button>
+        )}
       </div>
-
-      <MusicToggle
-        enabled={music.enabled}
-        onToggle={music.toggle}
-        visible={progressVisible}
-      />
-
-      {onExit && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onExit();
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          className="absolute top-3 right-3 z-30 w-9 h-9 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60 text-lg leading-none"
-          aria-label="Close slideshow"
-        >
-          ×
-        </button>
-      )}
     </div>
   );
 }

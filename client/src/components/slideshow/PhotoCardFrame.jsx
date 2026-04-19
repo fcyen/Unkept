@@ -45,11 +45,21 @@ function Landscape3({ items }) {
   );
 }
 
+// Visual reveal order: TL → BR → TR → BL. Cells are rendered in row-major
+// (TL, TR, BL, BR); this table maps each cell's grid position to its place
+// in the staggered sequence.
+const PORTRAIT_4_ORDER = [0, 2, 3, 1];
+
 function Portrait4({ items }) {
   return (
     <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 gap-1 bg-black p-1">
       {items.slice(0, 4).map((p, i) => (
-        <Cell key={p.id} photo={p} animation="flip-left" delayMs={i * 240} />
+        <Cell
+          key={p.id}
+          photo={p}
+          animation="flip-left"
+          delayMs={PORTRAIT_4_ORDER[i] * 240}
+        />
       ))}
     </div>
   );
