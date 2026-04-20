@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePipeline, PHASES } from '../lib/usePipeline.js';
-import { skeletonToLegacyStory } from '../lib/skeletonToLegacyStory.js';
-import { resolveLocations } from '../lib/geocode.js';
+import { buildStory, applyGeocoding } from '../lib/storyBuilder.js';
+import { resolveSkeletonLocations } from '../lib/geocode.js';
 
 // Each pipeline stage cycles through several phrasings while it runs, so
 // the button feels alive instead of stuck on a single sentence.
@@ -61,9 +61,8 @@ export default function UploadPage({ onStoryReady }) {
     pipeline.phase !== PHASES.DONE &&
     pipeline.phase !== PHASES.ERROR;
 
-  // When the skeleton lands, run geocoding, then adapt to the legacy story
-  // shape StoryView understands. This whole branch goes away once the
-  // skeleton-native slideshow is wired into the main route.
+  // When the skeleton lands, build the Story, run geocoding, fold the
+  // labels back in, and hand the result to SlideshowPlayer.
   useEffect(() => {
     if (!pipeline.result) return;
     if (handledResultRef.current === pipeline.result) return;
@@ -71,23 +70,23 @@ export default function UploadPage({ onStoryReady }) {
 
     (async () => {
       try {
-        const story = skeletonToLegacyStory(pipeline.result);
+        const skeleton = pipeline.result;
+        let story = buildStory(skeleton);
 
-        setGeocodingProgress({ done: 0, total: story.chapters.length });
-        const { country } = await resolveLocations(
-          story.chapters,
+        setGeocodingProgress({ done: 0, total: skeleton.chapters.length });
+        const { chapterLocations, country } = await resolveSkeletonLocations(
+          skeleton,
           (done, total) => setGeocodingProgress({ done, total }),
         );
         setGeocodingProgress(null);
+
+        story = applyGeocoding(story, { chapterLocations, country });
 
         previews.forEach((url) => URL.revokeObjectURL(url));
         setPreviews([]);
         setPhotos([]);
 
-        onStoryReady({
-          trip_name: buildTripName(country, pipeline.result),
-          chapters: story.chapters,
-        });
+        onStoryReady(story);
       } catch (err) {
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
@@ -291,26 +290,4 @@ function useCyclingPhrase(stage, active) {
   if (!stage) return '';
   const list = STAGE_PHRASES[stage] || STARTING_PHRASES;
   return list[index % list.length];
-}
-
-function buildTripName(country, skeleton) {
-  const dateRange = skeleton?.meta?.dateRange;
-  if (!dateRange && !country) return 'My Photo Story';
-
-  let datePart = '';
-  if (dateRange) {
-    const earliest = new Date(dateRange.start + 'T00:00:00');
-    const latest = new Date(dateRange.end + 'T00:00:00');
-    const monthFmt = (d) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-    if (earliest.getMonth() === latest.getMonth() && earliest.getFullYear() === latest.getFullYear()) {
-      datePart = monthFmt(earliest);
-    } else {
-      datePart = `${earliest.toLocaleDateString('en-US', { month: 'long' })} – ${monthFmt(latest)}`;
-    }
-  }
-
-  if (country && datePart) return `${country}, ${datePart}`;
-  if (country) return country;
-  return datePart || 'My Photo Story';
 }

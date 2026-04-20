@@ -16,7 +16,7 @@ Deployable as a static site.
 /  (repo root)
 ├── ARCHITECTURE.md
 ├── IMPLEMENTATION-PLAN.md                # Current implementation plan
-├── EXECUTIVE_SUMMARY.md                  # Product overview
+├── EXECUTIVE-SUMMARY.md                  # Product overview
 ├── MVP.md                                # MVP scope + quality bar
 ├── CLAUDE.md                             # Claude Code guide
 ├── client/                               # React + Vite + Tailwind (active)
@@ -35,7 +35,6 @@ Deployable as a static site.
 │       │   ├── validateSkeleton.js       # Runtime shape validator
 │       │   ├── geocode.js                # Nominatim + progressive updates (Part 2)
 │       │   ├── storyBuilder.js           # Skeleton → render-ready Story (frames)
-│       │   ├── skeletonToLegacyStory.js  # Temporary adapter for legacy StoryView
 │       │   ├── pipeline/
 │       │   │   ├── orchestrator.js       # Pure async Phase 1 orchestrator
 │       │   │   ├── runner.js             # Stage chaining + skeleton assembly helpers
@@ -54,12 +53,6 @@ Deployable as a static site.
 │       ├── components/
 │       │   ├── CompatibilityBlock.jsx    # Rendered when compat gate fails
 │       │   ├── UploadPage.jsx            # Upload UI + pipeline trigger
-│       │   ├── StoryView.jsx             # Legacy magazine renderer (kept until 2B
-│       │   │                             #   is wired into the main route)
-│       │   ├── Chapter.jsx
-│       │   ├── PhotoLayout.jsx
-│       │   ├── TableOfContents.jsx
-│       │   ├── FadeIn.jsx
 │       │   └── slideshow/                # PR 2B — Wrapped-style slideshow
 │       │       ├── SlideshowPlayer.jsx
 │       │       ├── CoverFrame.jsx
@@ -196,7 +189,7 @@ Story Skeleton (JSON) + user intent to view
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-Until the slideshow is wired into the main route, `UploadPage` still uses `skeletonToLegacyStory.js` to adapt the skeleton to the older `StoryView`/`Chapter`/`PhotoLayout` shape. This adapter is explicitly temporary and is deleted once the slideshow replaces StoryView on the main route.
+`UploadPage` drives Phase 1 via `usePipeline`, then calls `buildStory(skeleton)` → `resolveSkeletonLocations(skeleton)` → `applyGeocoding(story, …)` and hands the finished Story straight to `SlideshowPlayer` (wired in `App.jsx`). There is no intermediate adapter — the slideshow consumes the skeleton-derived Story directly.
 
 ---
 

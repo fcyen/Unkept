@@ -1,40 +1,42 @@
 /**
- * Reverse geocode coordinates to a city/area name using OpenStreetMap Nominatim.
- * Returns a location string like "Asakusa, Tokyo" or null.
- * Respects Nominatim's 1 req/sec rate limit.
+ * Reverse-geocoding against OpenStreetMap Nominatim.
+ *
+ * Skeleton-native: consumes `skeleton.chapters` (each with a `coords`
+ * property) and produces `{ chapterLocations, country }` shaped for
+ * `storyBuilder.applyGeocoding`.
+ *
+ * Respects Nominatim's 1 req/sec rate limit via a per-call delay.
+ * Caches by rounded coordinate key so repeat chapters in the same area
+ * only cost one request.
  */
 
 const cache = new Map();
 
 async function reverseGeocode(lat, lon) {
-  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  // ~100m resolution — matches how storyBuilder expects chapters near
+  // each other to collapse onto the same label.
+  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
   if (cache.has(key)) return cache.get(key);
 
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&accept-language=en`,
-      { headers: { 'User-Agent': 'Unkept/1.0' } }
+      { headers: { 'User-Agent': 'Unkept/1.0' } },
     );
     if (!res.ok) return null;
 
     const data = await res.json();
     const addr = data.address || {};
-
-    // Build a readable location: neighbourhood/suburb, city
     const area = addr.neighbourhood || addr.suburb || addr.quarter || addr.town || '';
     const city = addr.city || addr.town || addr.village || addr.municipality || '';
     const country = addr.country || '';
 
-    let location = '';
-    if (area && city && area !== city) {
-      location = `${area}, ${city}`;
-    } else if (city) {
-      location = city;
-    } else if (country) {
-      location = country;
-    }
+    let label = '';
+    if (area && city && area !== city) label = `${area}, ${city}`;
+    else if (city) label = city;
+    else if (country) label = country;
 
-    const result = { location: location || null, country: country || null };
+    const result = { label: label || null, country: country || null };
     cache.set(key, result);
     return result;
   } catch {
@@ -43,54 +45,45 @@ async function reverseGeocode(lat, lon) {
 }
 
 /**
- * Resolve location for a chapter based on its photos' GPS data.
- * Uses the median GPS coordinate from photos that have location data.
+ * Resolve a location label for every chapter with coordinates.
+ *
+ * @param {object} skeleton — a valid Story Skeleton
+ * @param {(done: number, total: number) => void} [onProgress]
+ * @returns {Promise<{
+ *   chapterLocations: Record<string, { label: string|null, country: string|null }>,
+ *   country: string | null,
+ * }>}  shape is ready to pass into `applyGeocoding(story, result)`.
  */
-export async function resolveChapterLocation(photos) {
-  const withGps = photos.filter((p) => p.latitude != null && p.longitude != null);
-  if (withGps.length === 0) {
-    console.log('[Unkept] No GPS data in chapter photos');
-    return null;
-  }
-
-  // Use median photo's coordinates (middle of the sorted set)
-  const midIdx = Math.floor(withGps.length / 2);
-  const median = withGps[midIdx];
-  console.log(`[Unkept] Geocoding: ${median.latitude}, ${median.longitude}`);
-
-  const result = await reverseGeocode(median.latitude, median.longitude);
-  console.log(`[Unkept] Location resolved:`, result);
-  return result;
-}
-
-/**
- * Resolve locations for all chapters. Adds a `location` field to each chapter.
- * Throttles requests to respect Nominatim rate limits.
- */
-export async function resolveLocations(chapters, onProgress) {
+export async function resolveSkeletonLocations(skeleton, onProgress) {
+  const chapters = skeleton.chapters;
+  const chapterLocations = {};
   const countries = [];
 
   for (let i = 0; i < chapters.length; i++) {
-    const result = await resolveChapterLocation(chapters[i].photos);
-    chapters[i].location = result ? result.location : null;
-    if (result?.country) countries.push(result.country);
+    const ch = chapters[i];
+    if (ch.coords) {
+      const result = await reverseGeocode(ch.coords.lat, ch.coords.lng);
+      if (result) {
+        chapterLocations[ch.id] = result;
+        if (result.country) countries.push(result.country);
+      }
+    }
+
     if (onProgress) onProgress(i + 1, chapters.length);
-    // Rate limit: 1 req/sec for Nominatim
+
+    // Nominatim's rate limit is 1 req/sec; the cache short-circuits repeat
+    // coords so in practice the wait only applies on fresh requests.
     if (i < chapters.length - 1) {
       await new Promise((r) => setTimeout(r, 1100));
     }
   }
 
-  // Return the most common country across chapters
-  const dominantCountry = getMostCommon(countries);
-  return { chapters, country: dominantCountry };
+  return { chapterLocations, country: mostCommon(countries) };
 }
 
-function getMostCommon(arr) {
+function mostCommon(arr) {
   if (arr.length === 0) return null;
   const counts = {};
-  for (const val of arr) {
-    counts[val] = (counts[val] || 0) + 1;
-  }
+  for (const val of arr) counts[val] = (counts[val] || 0) + 1;
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 }
