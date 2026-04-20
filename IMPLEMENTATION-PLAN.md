@@ -267,8 +267,9 @@ Testing in April 2026 surfaced that the new pipeline feels noticeably slower tha
   - Benchmark a typical 500-photo trip on a mid-range Android to confirm the pool size (4) is right — it's a guess, not measured.
 
 **Integration** **[done]**
-- `lib/skeletonToLegacyStory.js` — adapter from Story Skeleton to the legacy `StoryView`/`Chapter`/`PhotoLayout` shape so the magazine renderer runs on top of the new pipeline. Temporary — deleted once PR 2B replaces `StoryView` with the skeleton-native slideshow.
-- `UploadPage.jsx` — drives `usePipeline`, animates a cycling per-stage status phrase on the Generate button, resolves locations against the adapted chapters, hands a legacy story to `StoryView`
+- `UploadPage.jsx` — drives `usePipeline`, animates a cycling per-stage status phrase on the Generate button, builds the Story from the skeleton via `storyBuilder.buildStory`, runs `resolveSkeletonLocations`, folds the labels back in via `applyGeocoding`, and hands the finished Story straight to `SlideshowPlayer` (wired in `App.jsx`)
+- `lib/geocode.js` — replaced the photo-array API with `resolveSkeletonLocations(skeleton, onProgress)` that returns `{ chapterLocations, country }` shaped for `applyGeocoding`
+- Legacy `StoryView`, `Chapter`, `PhotoLayout`, `TableOfContents`, `FadeIn`, and the `skeletonToLegacyStory` adapter have been removed now that the slideshow consumes the skeleton directly
 - Legacy `lib/exif.js`, `lib/thumbnails.js`, `lib/matcher.js` and orphan `workers/thumbnail.worker.js` removed
 
 ### Phase 2 — Story renderer (Part 2) **[MVP]**
@@ -493,7 +494,7 @@ This turns selection quality from a gut-feel evaluation into something readable 
 
 #### Dev route — `/dev`
 
-A developer-only route that renders all three fixture test scenarios simultaneously, without any file upload. Because `StoryView` is a pure renderer that accepts a Story Skeleton, fixture skeletons can be hardcoded JSON fed directly to the renderer — no pipeline run, no drag-and-drop, instant load.
+A developer-only route that renders all three fixture test scenarios simultaneously, without any file upload. Because `SlideshowPlayer` is a pure renderer that accepts a Story (built from a skeleton by `storyBuilder`), fixture skeletons can be hardcoded JSON fed directly into `buildStory` — no pipeline run, no drag-and-drop, instant load.
 
 | Scenario | Chapters | Photos | What it stress-tests |
 |---|---|---|---|

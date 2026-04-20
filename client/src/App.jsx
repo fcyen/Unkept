@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import UploadPage from './components/UploadPage.jsx';
-import StoryView from './components/StoryView.jsx';
+import SlideshowPlayer from './components/slideshow/SlideshowPlayer.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
 import DevRoute from './dev/DevRoute.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
@@ -25,7 +25,7 @@ export default function App() {
   }
 
   if (story) {
-    return <StoryView story={story} onBack={() => setStory(null)} />;
+    return <SlideshowPlayer story={story} onExit={() => setStory(null)} />;
   }
 
   return <UploadPage onStoryReady={setStory} />;
