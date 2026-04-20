@@ -100,11 +100,14 @@ export default function UploadPage({ onStoryReady }) {
   }, [pipeline.error]);
 
   const addPhotos = (files) => {
+    if (files.length === 0) return;
+    // Create all blob URLs up front, then commit in a single state update.
+    // Previously we called setPreviews once per file; with a few hundred
+    // files that's a few hundred re-renders and the main thread stays busy
+    // long enough that clicking Generate feels unresponsive.
+    const urls = files.map((file) => URL.createObjectURL(file));
     setPhotos((prev) => [...prev, ...files]);
-    for (const file of files) {
-      const url = URL.createObjectURL(file);
-      setPreviews((prev) => [...prev, url]);
-    }
+    setPreviews((prev) => [...prev, ...urls]);
   };
 
   const clearPhotos = () => {
@@ -180,7 +183,13 @@ export default function UploadPage({ onStoryReady }) {
               <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 mb-3">
                 {previews.slice(0, 24).map((url, i) => (
                   <div key={i} className="aspect-square overflow-hidden bg-faint/10">
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={url}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 ))}
                 {previews.length > 24 && (
