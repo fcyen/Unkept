@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chapterBuilderStage, getMedianCoords } from './chapterBuilder.js';
+import { chapterBuilderStage } from './chapterBuilder.js';
 import { isValidSkeleton } from '../../validateSkeleton.js';
 import { assembleSkeleton } from '../runner.js';
 
@@ -207,33 +207,14 @@ describe('chapterBuilderStage', () => {
   });
 });
 
-describe('getMedianCoords', () => {
-  it('returns null for photos without GPS', () => {
-    const cluster = [makePhoto('p1'), makePhoto('p2')];
-    expect(getMedianCoords(cluster)).toBeNull();
-  });
+describe('chapter coords', () => {
+  it('is null when the hero file has no EXIF GPS', async () => {
+    // makePhoto's fake file has no EXIF payload — exifr.gps returns null.
+    const clusters = [[makePhoto('p1', '2025-03-15T08:00:00Z')]];
+    const heroIds = new Set(['p1']);
 
-  it('returns median coordinates', () => {
-    const cluster = [
-      makePhoto('p1', null, { lat: 10, lng: 20 }),
-      makePhoto('p2', null, { lat: 30, lng: 40 }),
-      makePhoto('p3', null, { lat: 20, lng: 30 }),
-    ];
+    const result = await chapterBuilderStage({ clusters, heroIds });
 
-    const coords = getMedianCoords(cluster);
-    expect(coords.lat).toBe(20);
-    expect(coords.lng).toBe(30);
-  });
-
-  it('ignores photos without coords in median calculation', () => {
-    const cluster = [
-      makePhoto('p1', null, { lat: 10, lng: 20 }),
-      makePhoto('p2', null, null),
-      makePhoto('p3', null, { lat: 30, lng: 40 }),
-    ];
-
-    const coords = getMedianCoords(cluster);
-    // With 2 photos: median is at index 1 (floor(2/2) = 1)
-    expect(coords).not.toBeNull();
+    expect(result.chapters[0].coords).toBeNull();
   });
 });

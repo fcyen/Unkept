@@ -7,11 +7,16 @@
  * Selects which photos appear in the story and builds the chapter structure.
  * Output drives thumbnail generation (only selected photos get thumbnails).
  *
+ * Chapter coordinates are decoded here — exactly one GPS read per chapter
+ * (the hero's file). The EXIF stage leaves photo coords null to avoid a
+ * GPS decode per photo.
+ *
  * MVP selection logic:
  * - All photos in each cluster are selected (no culling yet)
  * - Each cluster becomes a chapter
- * - Chapter metadata includes: id, photoIds, heroPhotoId, date, median coords
+ * - Chapter metadata includes: id, photoIds, heroPhotoId, date, hero coords
  */
+import exifr from 'exifr';
 
 /**
  * @param {{ clusters: PhotoData[][], heroIds: Set<string>, burstGroups?: BurstGroup[], burstCandidates?: PhotoData[] }} input
@@ -34,33 +39,43 @@ export async function chapterBuilderStage(input, options = {}, onProgress) {
     return { chapters: [], photos: new Map(), burstGroups: [] };
   }
 
-  const chapters = [];
-  const selectedPhotos = new Map();
-  const total = clusters.length;
-
+  const plans = [];
   for (let i = 0; i < clusters.length; i++) {
     const cluster = clusters[i];
     if (cluster.length === 0) continue;
+    plans.push({
+      clusterIndex: i,
+      cluster,
+      heroPhotoId: findHeroInCluster(cluster, heroIds),
+    });
+  }
 
-    const photoIds = cluster.map((p) => p.id);
-    const heroPhotoId = findHeroInCluster(cluster, heroIds);
-    const date = getChapterDate(cluster);
-    const coords = getMedianCoords(cluster);
+  // Decode GPS once per chapter — from the hero's file — in parallel.
+  const coordsList = await Promise.all(
+    plans.map(({ cluster, heroPhotoId }) =>
+      extractCoordsFromFile(cluster.find((p) => p.id === heroPhotoId)?.file),
+    ),
+  );
+
+  const chapters = [];
+  const selectedPhotos = new Map();
+
+  for (let i = 0; i < plans.length; i++) {
+    const { clusterIndex, cluster, heroPhotoId } = plans[i];
 
     chapters.push({
-      id: `chapter_${String(i + 1).padStart(3, '0')}`,
-      photoIds,
+      id: `chapter_${String(clusterIndex + 1).padStart(3, '0')}`,
+      photoIds: cluster.map((p) => p.id),
       heroPhotoId,
-      date,
-      coords,
+      date: getChapterDate(cluster),
+      coords: coordsList[i],
     });
 
-    // Track all photos shown in chapters
     for (const photo of cluster) {
       selectedPhotos.set(photo.id, photo);
     }
 
-    if (onProgress) onProgress(i + 1, total);
+    if (onProgress) onProgress(i + 1, plans.length);
   }
 
   // Include burst candidates so they get thumbnails and land in skeleton.photos.
@@ -85,6 +100,19 @@ export async function chapterBuilderStage(input, options = {}, onProgress) {
   return { chapters, photos: selectedPhotos, burstGroups: validBurstGroups };
 }
 
+async function extractCoordsFromFile(file) {
+  if (!file) return null;
+  try {
+    const gps = await exifr.gps(file);
+    if (gps && gps.latitude != null && gps.longitude != null) {
+      return { lat: gps.latitude, lng: gps.longitude };
+    }
+  } catch {
+    // ignore — file may not have GPS data
+  }
+  return null;
+}
+
 function findHeroInCluster(cluster, heroIds) {
   for (const photo of cluster) {
     if (heroIds.has(photo.id)) return photo.id;
@@ -103,22 +131,4 @@ function getChapterDate(cluster) {
   return null;
 }
 
-/**
- * Compute median GPS coordinates for a cluster.
- * Returns null if no photos have coordinates.
- */
-function getMedianCoords(cluster) {
-  const withCoords = cluster.filter((p) => p.coords != null);
-  if (withCoords.length === 0) return null;
-
-  const lats = withCoords.map((p) => p.coords.lat).sort((a, b) => a - b);
-  const lngs = withCoords.map((p) => p.coords.lng).sort((a, b) => a - b);
-
-  const mid = Math.floor(withCoords.length / 2);
-  return {
-    lat: lats[mid],
-    lng: lngs[mid],
-  };
-}
-
-export { findHeroInCluster, getChapterDate, getMedianCoords };
+export { findHeroInCluster, getChapterDate };

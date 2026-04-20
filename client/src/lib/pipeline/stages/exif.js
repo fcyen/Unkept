@@ -3,8 +3,11 @@
  *
  * Pipeline stage signature: (files: File[], options, onProgress) => PhotoData[]
  *
- * Wraps the EXIF web worker to extract timestamp + GPS data from files in
- * batches of 50. Returns PhotoData objects with metadata but no pixel data.
+ * Wraps the EXIF web worker to extract timestamps from files in batches
+ * of 50. Returns PhotoData objects with metadata but no pixel data.
+ * Coordinates are left null here — `chapterBuilder` decodes GPS from the
+ * hero photo of each chapter instead, so GPS is read once per chapter
+ * rather than once per file.
  */
 import ExifWorker from '../../workers/exif.worker.js?worker';
 
@@ -31,9 +34,7 @@ export async function exifStage(files, options, onProgress) {
             name: item.name,
             file: files[item.index],
             timestamp: item.timestamp,
-            coords: item.latitude != null && item.longitude != null
-              ? { lat: item.latitude, lng: item.longitude }
-              : null,
+            coords: null,
             thumbnailUrl: null,
             thumbnailHeroUrl: null,
             thumbnailFailed: false,

@@ -200,18 +200,20 @@ const long = buildSkeleton({
 
 // EDGE — 1 day, 4 short chapters covering every photo-card layout.
 // Exercises: portrait-1 (single-photo), landscape-2, mixed-2p-1l, portrait-4.
+// Counts below refer to non-hero photos, since the hero is shown on the
+// chapter divider and is excluded from the photo card.
 const edge = buildSkeleton({
   generatedAt: '2026-04-11T20:00:00Z',
   startDate: '2026-04-11',
   chapters: [
-    // Chapter 1 — single photo → portrait-1 fallback
+    // Chapter 1 — single photo → portrait-1 fallback (hero alone)
     { coords: { lat: 1.300, lng: 103.800 }, photos: [P] },
-    // Chapter 2 — two landscape only → landscape-2
-    { coords: { lat: 1.310, lng: 103.810 }, photos: [L, L] },
-    // Chapter 3 — two portrait + one landscape → mixed-2p-1l
-    { coords: { lat: 1.320, lng: 103.820 }, photos: [P, P, L] },
-    // Chapter 4 — four portraits → portrait-4
-    { coords: { lat: 1.330, lng: 103.830 }, photos: [P, P, P, P] },
+    // Chapter 2 — hero + 2 landscapes → landscape-2
+    { coords: { lat: 1.310, lng: 103.810 }, photos: [L, L, L] },
+    // Chapter 3 — hero + 2 portraits + 1 landscape → mixed-2p-1l
+    { coords: { lat: 1.320, lng: 103.820 }, photos: [P, P, P, L] },
+    // Chapter 4 — hero + 4 portraits → portrait-4
+    { coords: { lat: 1.330, lng: 103.830 }, photos: [P, P, P, P, P] },
   ],
 });
 

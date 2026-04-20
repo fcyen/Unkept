@@ -149,7 +149,7 @@ function p(id, orientation, qualityScore = 0.5) {
 }
 
 describe('selectPhotoCardLayout', () => {
-  it('rule 1: portrait hero + ≥3 portraits → portrait-4', () => {
+  it('rule 1: ≥4 non-hero portraits → portrait-4', () => {
     const photos = [
       p('hero', 'portrait', 0.9),
       p('p1', 'portrait', 0.8),
@@ -160,10 +160,10 @@ describe('selectPhotoCardLayout', () => {
     ];
     const r = selectPhotoCardLayout(photos, 'hero');
     expect(r.layout).toBe('portrait-4');
-    expect(r.photoIds).toEqual(['hero', 'p1', 'p2', 'p3']);
+    expect(r.photoIds).toEqual(['p1', 'p2', 'p3', 'p4']);
   });
 
-  it('rule 2: landscape hero + ≥2 landscapes → landscape-3', () => {
+  it('rule 2: ≥3 non-hero landscapes → landscape-3', () => {
     const photos = [
       p('hero', 'landscape', 0.9),
       p('l1', 'landscape', 0.8),
@@ -173,70 +173,58 @@ describe('selectPhotoCardLayout', () => {
     ];
     const r = selectPhotoCardLayout(photos, 'hero');
     expect(r.layout).toBe('landscape-3');
-    expect(r.photoIds).toEqual(['hero', 'l1', 'l2']);
+    expect(r.photoIds).toEqual(['l1', 'l2', 'l3']);
   });
 
-  it('rule 3: portrait hero + 1 portrait + 1 landscape → mixed-2p-1l', () => {
+  it('rule 3: ≥2 non-hero portraits + ≥1 non-hero landscape → mixed-2p-1l', () => {
     const photos = [
       p('hero', 'portrait', 0.9),
       p('p1', 'portrait', 0.8),
-      p('l1', 'landscape', 0.7),
-    ];
-    const r = selectPhotoCardLayout(photos, 'hero');
-    expect(r.layout).toBe('mixed-2p-1l');
-    expect(r.photoIds).toContain('hero');
-    expect(r.photoIds).toContain('l1');
-  });
-
-  it('rule 3 (landscape hero variant): landscape hero + ≥2 portraits (no more landscapes) → mixed-2p-1l', () => {
-    const photos = [
-      p('hero', 'landscape', 0.9),
-      p('p1', 'portrait', 0.8),
       p('p2', 'portrait', 0.7),
+      p('l1', 'landscape', 0.6),
     ];
     const r = selectPhotoCardLayout(photos, 'hero');
     expect(r.layout).toBe('mixed-2p-1l');
-    // In this variant, hero is the L slot (last in array by storyboard).
-    expect(r.photoIds[2]).toBe('hero');
+    expect(r.photoIds).toEqual(['p1', 'p2', 'l1']);
+    expect(r.photoIds).not.toContain('hero');
   });
 
-  it('rule 4: landscape hero + exactly 1 more landscape → landscape-2', () => {
+  it('rule 4: ≥2 non-hero landscapes (fewer than 3) → landscape-2', () => {
     const photos = [
       p('hero', 'landscape', 0.9),
       p('l1', 'landscape', 0.8),
+      p('l2', 'landscape', 0.7),
     ];
     const r = selectPhotoCardLayout(photos, 'hero');
     expect(r.layout).toBe('landscape-2');
-    expect(r.photoIds).toEqual(['hero', 'l1']);
+    expect(r.photoIds).toEqual(['l1', 'l2']);
   });
 
-  it('rule 5: single photo → portrait-1 fallback', () => {
+  it('rule 5: hero-only chapter → portrait-1 with hero', () => {
     const photos = [p('hero', 'portrait', 0.9)];
     const r = selectPhotoCardLayout(photos, 'hero');
     expect(r.layout).toBe('portrait-1');
     expect(r.photoIds).toEqual(['hero']);
   });
 
-  it('rule 5 variant: portrait hero with only portraits (< 4) and no landscape → portrait-1', () => {
+  it('rule 5 variant: only one non-hero photo → portrait-1 with the non-hero', () => {
     const photos = [
       p('hero', 'portrait', 0.9),
       p('p1', 'portrait', 0.8),
     ];
-    // Only 2 portraits, no landscapes — can't do portrait-4 (need 4), can't
-    // do mixed (need landscape). Falls through to portrait-1.
     const r = selectPhotoCardLayout(photos, 'hero');
     expect(r.layout).toBe('portrait-1');
-    expect(r.photoIds).toEqual(['hero']);
+    expect(r.photoIds).toEqual(['p1']);
   });
 
-  it('always includes the hero in the output', () => {
+  it('excludes the hero when alternatives exist', () => {
     const photos = [
-      p('hero', 'landscape', 0.1), // hero has LOW quality
-      p('l1', 'landscape', 0.9),
-      p('l2', 'landscape', 0.8),
+      p('hero', 'landscape', 0.9),
+      p('l1', 'landscape', 0.8),
+      p('l2', 'landscape', 0.7),
     ];
     const r = selectPhotoCardLayout(photos, 'hero');
-    expect(r.photoIds).toContain('hero');
+    expect(r.photoIds).not.toContain('hero');
   });
 
   it('throws if hero not in photo list', () => {

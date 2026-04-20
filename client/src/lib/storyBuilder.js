@@ -171,15 +171,16 @@ export function generateTripName({ dateRange, country }) {
 
 /**
  * One of five photo-card layouts — see PHASE-2-DESIGN-INTENT.md storyboard.
- * Selection respects hero inclusion (hero is always in the output) and
- * prefers layouts that show more photos.
+ * The hero is featured on the chapter divider that precedes the card, so
+ * it is excluded here to avoid showing the same photo twice in a row.
  *
- * Rules (evaluated in order):
- *   1. hero portrait  + ≥3 other portraits  → portrait-4
- *   2. hero landscape + ≥2 other landscapes → landscape-3
- *   3. ≥2 portraits + ≥1 landscape available (hero in one of them) → mixed-2p-1l
- *   4. hero landscape + ≥1 other landscape  → landscape-2
- *   5. otherwise                            → portrait-1 (hero alone, full frame)
+ * Rules (evaluated in order, all counts refer to non-hero photos):
+ *   1. ≥4 portraits              → portrait-4
+ *   2. ≥3 landscapes             → landscape-3
+ *   3. ≥2 portraits + ≥1 landscape → mixed-2p-1l
+ *   4. ≥2 landscapes             → landscape-2
+ *   5. otherwise                 → portrait-1 (best non-hero, or hero alone
+ *                                  if the chapter has no other photos)
  *
  * @param {{id, orientation, qualityScore, ...}[]} photos - full chapter photo
  *        list (hero included). Orientation required.
@@ -203,48 +204,46 @@ export function selectPhotoCardLayout(photos, heroId) {
   portraits.sort(byQuality);
 
   // Rule 1 — portrait-4
-  if (hero.orientation === 'portrait' && portraits.length >= 3) {
+  if (portraits.length >= 4) {
     return {
       layout: 'portrait-4',
-      photoIds: [hero.id, ...portraits.slice(0, 3).map((p) => p.id)],
+      photoIds: portraits.slice(0, 4).map((p) => p.id),
     };
   }
 
   // Rule 2 — landscape-3
-  if (hero.orientation === 'landscape' && landscapes.length >= 2) {
+  if (landscapes.length >= 3) {
     return {
       layout: 'landscape-3',
-      photoIds: [hero.id, ...landscapes.slice(0, 2).map((p) => p.id)],
+      photoIds: landscapes.slice(0, 3).map((p) => p.id),
     };
   }
 
   // Rule 3 — mixed-2p-1l (2 portraits on top, 1 landscape below)
-  //   Hero occupies its orientation slot; remaining slots filled by top quality.
-  if (hero.orientation === 'portrait' && portraits.length >= 1 && landscapes.length >= 1) {
+  if (portraits.length >= 2 && landscapes.length >= 1) {
     return {
       layout: 'mixed-2p-1l',
-      photoIds: [hero.id, portraits[0].id, landscapes[0].id],
-    };
-  }
-  if (hero.orientation === 'landscape' && portraits.length >= 2) {
-    return {
-      layout: 'mixed-2p-1l',
-      photoIds: [portraits[0].id, portraits[1].id, hero.id],
+      photoIds: [portraits[0].id, portraits[1].id, landscapes[0].id],
     };
   }
 
   // Rule 4 — landscape-2
-  if (hero.orientation === 'landscape' && landscapes.length >= 1) {
+  if (landscapes.length >= 2) {
     return {
       layout: 'landscape-2',
-      photoIds: [hero.id, landscapes[0].id],
+      photoIds: [landscapes[0].id, landscapes[1].id],
     };
   }
 
-  // Rule 5 — portrait-1 fallback (single photo, full frame)
+  // Rule 5 — portrait-1 fallback. Prefer any non-hero photo so we still
+  // avoid duplicating the hero; fall back to the hero only when it is the
+  // chapter's only photo.
+  const fallback = nonHero.length > 0
+    ? [...nonHero].sort(byQuality)[0]
+    : hero;
   return {
     layout: 'portrait-1',
-    photoIds: [hero.id],
+    photoIds: [fallback.id],
   };
 }
 
