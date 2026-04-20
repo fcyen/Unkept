@@ -4,15 +4,15 @@
  * Pipeline stage signature:
  *   ({ chapters, photos }: ChapterBuilderOutput, options, onProgress) => { chapters, photos }
  *
- * For each selected photo:
- * - Generates a 200px JPEG data URL (standard tier)
- * - Pre-computes Laplacian variance from the same canvas pass so
- *   qualityScore doesn't have to decode the thumbnail a second time.
+ * For each selected photo we decode once at HERO_SIZE and derive two tiers
+ * from the same canvas:
+ *   - thumbnailHeroUrl — ~1200px JPEG, used by the slideshow frames so
+ *     full-bleed photos don't look upscaled.
+ *   - thumbnailUrl     — ~200px JPEG, used by the upload preview grid and
+ *     as the source for the Laplacian blur score.
  *
- * The 400px hero tier is currently disabled for MVP (it doubled the
- * decode cost for every chapter hero with limited visible payoff). The
- * plumbing stays so we can re-enable when the slideshow-native renderer
- * needs it.
+ * Laplacian variance is still computed from the 200px canvas (same
+ * signal as before) so qualityScore stays on its fast path.
  *
  * Uses OffscreenCanvas on the main thread (worker version is a later
  * follow-up). HEIC: attempts createImageBitmap(); on failure marks
@@ -22,7 +22,9 @@
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const STANDARD_SIZE = 200;
-const JPEG_QUALITY = 0.7;
+const HERO_SIZE = 1200;
+const STANDARD_JPEG_QUALITY = 0.7;
+const HERO_JPEG_QUALITY = 0.82;
 
 /**
  * Decode a file, resize into a canvas, return {canvas, ctx, width, height}.
@@ -61,8 +63,8 @@ async function decodeToCanvas(file, maxSize) {
 /**
  * Encode an OffscreenCanvas to a base64 data URL.
  */
-async function canvasToDataUrl(canvas) {
-  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: JPEG_QUALITY });
+async function canvasToDataUrl(canvas, quality = STANDARD_JPEG_QUALITY) {
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -70,6 +72,27 @@ async function canvasToDataUrl(canvas) {
     binary += String.fromCharCode(bytes[i]);
   }
   return `data:image/jpeg;base64,${btoa(binary)}`;
+}
+
+/**
+ * Downscale an already-resized hero canvas to the standard tier.
+ */
+function downscaleCanvas(src, maxSize) {
+  let width = src.width;
+  let height = src.height;
+  if (width > maxSize || height > maxSize) {
+    if (width > height) {
+      height = Math.round((height * maxSize) / width);
+      width = maxSize;
+    } else {
+      width = Math.round((width * maxSize) / height);
+      height = maxSize;
+    }
+  }
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(src, 0, 0, width, height);
+  return { canvas, ctx, width, height };
 }
 
 /**
@@ -139,8 +162,10 @@ export async function thumbnailStage(input, options = {}, onProgress) {
     entries,
     concurrency,
     async ([, photo]) => {
-      const decoded = await decodeToCanvas(photo.file, STANDARD_SIZE);
-      if (!decoded) {
+      // One decode at hero size — the 200px tier is a cheap canvas
+      // downscale from this so we don't pay for a second createImageBitmap.
+      const hero = await decodeToCanvas(photo.file, HERO_SIZE);
+      if (!hero) {
         photo.thumbnailFailed = true;
         photo.thumbnailUrl = null;
         photo.thumbnailHeroUrl = null;
@@ -148,13 +173,12 @@ export async function thumbnailStage(input, options = {}, onProgress) {
         return;
       }
 
-      // Pull imageData before the JPEG encode so the canvas's pixels are
-      // still hot — this avoids a separate decode/getImageData pass in
-      // qualityScore.
-      const imageData = decoded.ctx.getImageData(0, 0, decoded.width, decoded.height);
-      photo._rawVariance = laplacianVariance(imageData);
-      photo.thumbnailUrl = await canvasToDataUrl(decoded.canvas);
-      photo.thumbnailHeroUrl = null; // 400px tier disabled for MVP
+      const std = downscaleCanvas(hero.canvas, STANDARD_SIZE);
+      const stdImageData = std.ctx.getImageData(0, 0, std.width, std.height);
+      photo._rawVariance = laplacianVariance(stdImageData);
+
+      photo.thumbnailUrl = await canvasToDataUrl(std.canvas, STANDARD_JPEG_QUALITY);
+      photo.thumbnailHeroUrl = await canvasToDataUrl(hero.canvas, HERO_JPEG_QUALITY);
     },
     onProgress,
   );
