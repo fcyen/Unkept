@@ -15,6 +15,8 @@
  * Blob URLs for rejected duplicates are revoked immediately.
  */
 
+import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
+
 const CHUNK_SIZE = 65536; // 64KB
 const DEFAULT_HAMMING_THRESHOLD = 5;
 
@@ -126,51 +128,70 @@ export async function dedupStage(photos, options = {}, onProgress) {
   const threshold = options.hammingThreshold ?? DEFAULT_HAMMING_THRESHOLD;
   const total = photos.length;
 
-  // Pass 1: Exact hash deduplication
+  // Pass 1: compute exact hashes in parallel, then dedup in order.
+  // Order only matters for "which photo wins" — we keep the first occurrence,
+  // so the sequential filter after the parallel hash is cheap.
+  let passOneDone = 0;
+  const exactHashes = await parallelMap(
+    photos,
+    DEFAULT_STAGE_CONCURRENCY,
+    (photo) => computeExactHash(photo.file),
+    () => {
+      passOneDone++;
+      // Weight pass 1 as ~40% of the total progress bar.
+      if (onProgress) onProgress(Math.round((passOneDone / total) * 0.4 * total), total);
+    },
+  );
+
   const exactHashMap = new Map(); // hash -> index of first occurrence
   const afterExact = [];
-
   for (let i = 0; i < photos.length; i++) {
-    const photo = photos[i];
-    const hash = await computeExactHash(photo.file);
-
-    if (exactHashMap.has(hash)) {
-      // Exact duplicate — discard entirely (no frame variation to preserve)
-      continue;
-    }
-
-    exactHashMap.set(hash, i);
-    afterExact.push(photo);
-
-    if (onProgress) onProgress(i + 1, total);
+    if (exactHashMap.has(exactHashes[i])) continue;
+    exactHashMap.set(exactHashes[i], i);
+    afterExact.push(photos[i]);
   }
 
-  // Pass 2: Perceptual hash deduplication — near-duplicates become burst candidates
+  // Pass 2: compute perceptual hashes in parallel, then resolve near-duplicates
+  // sequentially so the "first wins" ordering is stable.
+  let passTwoDone = 0;
+  const perceptualHashes = await parallelMap(
+    afterExact,
+    DEFAULT_STAGE_CONCURRENCY,
+    async (photo) => {
+      try {
+        return await computePerceptualHash(photo.file);
+      } catch {
+        // HEIC on unsupported browser, etc. — keep the photo; null hash
+        // skips it during the comparison pass below.
+        return null;
+      }
+    },
+    () => {
+      passTwoDone++;
+      const overall = 0.4 * total + (passTwoDone / afterExact.length) * 0.6 * total;
+      if (onProgress) onProgress(Math.round(overall), total);
+    },
+  );
+
   const kept = [];
-  const perceptualHashes = [];
+  const keptHashes = [];
   const burstCandidates = [];
-  const burstGroupsByRepId = new Map(); // representativeId -> { representativeId, candidateIds }
+  const burstGroupsByRepId = new Map();
 
   for (let i = 0; i < afterExact.length; i++) {
     const photo = afterExact[i];
+    const pHash = perceptualHashes[i];
 
-    let pHash;
-    try {
-      pHash = await computePerceptualHash(photo.file);
-    } catch {
-      // If perceptual hash fails (e.g. HEIC on unsupported browser),
-      // keep the photo — can't determine if it's a duplicate
+    if (pHash === null) {
       kept.push(photo);
-      perceptualHashes.push(null);
+      keptHashes.push(null);
       continue;
     }
 
-    // Check against all previously kept photos
     let matchedRepIdx = -1;
-    for (let j = 0; j < perceptualHashes.length; j++) {
-      if (perceptualHashes[j] === null) continue;
-      const dist = hammingDistance(pHash, perceptualHashes[j]);
-      if (dist <= threshold) {
+    for (let j = 0; j < keptHashes.length; j++) {
+      if (keptHashes[j] === null) continue;
+      if (hammingDistance(pHash, keptHashes[j]) <= threshold) {
         matchedRepIdx = j;
         break;
       }
@@ -178,9 +199,8 @@ export async function dedupStage(photos, options = {}, onProgress) {
 
     if (matchedRepIdx === -1) {
       kept.push(photo);
-      perceptualHashes.push(pHash);
+      keptHashes.push(pHash);
     } else {
-      // This photo is a burst candidate of kept[matchedRepIdx]
       burstCandidates.push(photo);
       const repId = kept[matchedRepIdx].id;
       let group = burstGroupsByRepId.get(repId);

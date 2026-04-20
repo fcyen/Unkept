@@ -1,24 +1,113 @@
-import { useState, useRef } from 'react';
-import { extractBatch } from '../lib/exif.js';
-import { generateThumbnails } from '../lib/thumbnails.js';
-import { matchPhotosToEvents } from '../lib/matcher.js';
+import { useEffect, useRef, useState } from 'react';
+import { usePipeline, PHASES } from '../lib/usePipeline.js';
+import { skeletonToLegacyStory } from '../lib/skeletonToLegacyStory.js';
 import { resolveLocations } from '../lib/geocode.js';
+
+// Each pipeline stage cycles through several phrasings while it runs, so
+// the button feels alive instead of stuck on a single sentence.
+const STAGE_PHRASES = {
+  exif: [
+    'Reading timestamps',
+    'Extracting image data',
+    'Sorting by capture time',
+  ],
+  dedup: [
+    'Finding duplicates',
+    'Filtering the photos',
+    'Comparing fingerprints',
+  ],
+  cluster: [
+    'Grouping by day',
+    'Stitching moments together',
+    'Sketching the chapters',
+  ],
+  heroSelect: [
+    'Choosing highlights',
+    'Spotting the best shots',
+    'Picking hero moments',
+  ],
+  chapterBuilder: [
+    'Building chapters',
+    'Drafting the story',
+    'Laying out the arc',
+  ],
+  thumbnail: [
+    'Generating thumbnails',
+    'Resizing for the page',
+    'Preparing the artwork',
+  ],
+  qualityScore: [
+    'Scoring quality',
+    'Measuring sharpness',
+    'Ranking the favourites',
+  ],
+};
+
+const STARTING_PHRASES = ['Warming up', 'Getting started'];
+const PHRASE_INTERVAL_MS = 1800;
 
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
-  const [previews, setPreviews] = useState([]); // blob URLs for thumbnails
-  const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState('');
+  const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
+  const [geocodingProgress, setGeocodingProgress] = useState(null);
   const fileInputRef = useRef(null);
+  const handledResultRef = useRef(null);
+
+  const pipeline = usePipeline();
+
+  const processing =
+    pipeline.phase !== PHASES.IDLE &&
+    pipeline.phase !== PHASES.DONE &&
+    pipeline.phase !== PHASES.ERROR;
+
+  // When the skeleton lands, run geocoding, then adapt to the legacy story
+  // shape StoryView understands. This whole branch goes away once the
+  // skeleton-native slideshow is wired into the main route.
+  useEffect(() => {
+    if (!pipeline.result) return;
+    if (handledResultRef.current === pipeline.result) return;
+    handledResultRef.current = pipeline.result;
+
+    (async () => {
+      try {
+        const story = skeletonToLegacyStory(pipeline.result);
+
+        setGeocodingProgress({ done: 0, total: story.chapters.length });
+        const { country } = await resolveLocations(
+          story.chapters,
+          (done, total) => setGeocodingProgress({ done, total }),
+        );
+        setGeocodingProgress(null);
+
+        previews.forEach((url) => URL.revokeObjectURL(url));
+        setPreviews([]);
+        setPhotos([]);
+
+        onStoryReady({
+          trip_name: buildTripName(country, pipeline.result),
+          chapters: story.chapters,
+        });
+      } catch (err) {
+        setError(err.message || 'Failed to finish story.');
+        setGeocodingProgress(null);
+      }
+    })();
+  }, [pipeline.result, previews, onStoryReady]);
+
+  useEffect(() => {
+    if (pipeline.error) setError(pipeline.error.message || 'Pipeline failed.');
+  }, [pipeline.error]);
 
   const addPhotos = (files) => {
+    if (files.length === 0) return;
+    // Create all blob URLs up front, then commit in a single state update.
+    // Previously we called setPreviews once per file; with a few hundred
+    // files that's a few hundred re-renders and the main thread stays busy
+    // long enough that clicking Generate feels unresponsive.
+    const urls = files.map((file) => URL.createObjectURL(file));
     setPhotos((prev) => [...prev, ...files]);
-    // Generate quick previews (small, fast)
-    for (const file of files) {
-      const url = URL.createObjectURL(file);
-      setPreviews((prev) => [...prev, url]);
-    }
+    setPreviews((prev) => [...prev, ...urls]);
   };
 
   const clearPhotos = () => {
@@ -30,7 +119,7 @@ export default function UploadPage({ onStoryReady }) {
   const handlePhotoDrop = (e) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter((f) =>
-      /\.(jpg|jpeg|png|heic|heif|webp|tiff)$/i.test(f.name)
+      /\.(jpg|jpeg|png|heic|heif|webp|tiff)$/i.test(f.name),
     );
     addPhotos(files);
   };
@@ -40,44 +129,13 @@ export default function UploadPage({ onStoryReady }) {
     addPhotos(files);
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     if (photos.length === 0) {
       setError('Please add some photos first.');
       return;
     }
-
     setError('');
-    setProcessing(true);
-
-    try {
-      setProgress(`Reading EXIF data... 0/${photos.length}`);
-      const photoData = await extractBatch(photos, (done, total) => {
-        setProgress(`Reading EXIF data... ${done}/${total}`);
-      });
-
-      setProgress(`Generating thumbnails... 0/${photos.length}`);
-      await generateThumbnails(photoData, (done, total) => {
-        setProgress(`Generating thumbnails... ${done}/${total}`);
-      });
-
-      setProgress('Grouping photos by time...');
-      const chapters = matchPhotosToEvents(photoData, null);
-
-      setProgress('Resolving locations...');
-      const { country } = await resolveLocations(chapters, (done, total) => {
-        setProgress(`Resolving locations... ${done}/${total}`);
-      });
-
-      onStoryReady({
-        trip_name: buildTripName(country, photoData),
-        chapters,
-      });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setProcessing(false);
-      setProgress('');
-    }
+    pipeline.start(photos);
   };
 
   return (
@@ -93,7 +151,6 @@ export default function UploadPage({ onStoryReady }) {
           </p>
         </div>
 
-        {/* Photo Upload */}
         <div
           className="border border-faint/40 rounded-sm text-center cursor-pointer hover:border-ink/30 transition-colors mb-4 overflow-hidden"
           onDragOver={(e) => e.preventDefault()}
@@ -129,6 +186,8 @@ export default function UploadPage({ onStoryReady }) {
                     <img
                       src={url}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -148,7 +207,7 @@ export default function UploadPage({ onStoryReady }) {
           )}
         </div>
 
-        {photos.length > 0 && (
+        {photos.length > 0 && !processing && (
           <button
             onClick={(e) => { e.stopPropagation(); clearPhotos(); }}
             className="font-sans text-xs text-muted hover:text-ink tracking-wide mb-8 block"
@@ -157,39 +216,91 @@ export default function UploadPage({ onStoryReady }) {
           </button>
         )}
 
-        {/* Error */}
         {error && (
           <div className="border border-red-300 bg-red-50 p-3 mb-6">
             <p className="font-sans text-xs text-red-600">{error}</p>
           </div>
         )}
 
-        {/* Generate Button */}
-        <button
+        <ProgressButton
+          processing={processing}
+          pipeline={pipeline}
+          geocodingProgress={geocodingProgress}
           onClick={handleGenerate}
-          disabled={processing}
-          className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
-        >
-          {processing ? progress || 'Processing...' : 'Generate Story'}
-        </button>
+        />
       </div>
     </div>
   );
 }
 
-function buildTripName(country, photoData) {
-  // Get month/year from the earliest photo timestamp
-  const timestamps = photoData
-    .map((p) => p.timestamp)
-    .filter(Boolean)
-    .sort();
+/**
+ * Generate / progress button. Cycles through stage-specific phrases on a
+ * timer so the UI feels alive even when a stage holds the main thread for
+ * a few seconds.
+ */
+function ProgressButton({ processing, pipeline, geocodingProgress, onClick }) {
+  const stage = geocodingProgress
+    ? 'geocoding'
+    : pipeline.progress?.stage || (processing ? 'starting' : null);
 
-  if (timestamps.length === 0 && !country) return 'My Photo Story';
+  const phrase = useCyclingPhrase(stage, processing && !geocodingProgress);
+
+  let label;
+  if (!processing) {
+    label = 'Generate Story';
+  } else if (geocodingProgress) {
+    const { done, total } = geocodingProgress;
+    label = `Resolving locations… ${done}/${total}`;
+  } else {
+    const p = pipeline.progress;
+    const counter = p && p.total > 0 ? ` ${p.progress}/${p.total}` : '';
+    label = `${phrase}…${counter}`;
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={processing}
+      className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
+    >
+      <span
+        key={`${stage}-${phrase}`}
+        className={processing ? 'inline-block animate-phrase-fade' : undefined}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Returns the current phrase for a stage, cycling through the stage's
+ * phrase list every PHRASE_INTERVAL_MS while `active` is true. Resets
+ * when `stage` changes.
+ */
+function useCyclingPhrase(stage, active) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+    if (!active || !stage) return undefined;
+    const id = setInterval(() => setIndex((i) => i + 1), PHRASE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [stage, active]);
+
+  if (!stage) return '';
+  const list = STAGE_PHRASES[stage] || STARTING_PHRASES;
+  return list[index % list.length];
+}
+
+function buildTripName(country, skeleton) {
+  const dateRange = skeleton?.meta?.dateRange;
+  if (!dateRange && !country) return 'My Photo Story';
 
   let datePart = '';
-  if (timestamps.length > 0) {
-    const earliest = new Date(timestamps[0]);
-    const latest = new Date(timestamps[timestamps.length - 1]);
+  if (dateRange) {
+    const earliest = new Date(dateRange.start + 'T00:00:00');
+    const latest = new Date(dateRange.end + 'T00:00:00');
     const monthFmt = (d) => d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
     if (earliest.getMonth() === latest.getMonth() && earliest.getFullYear() === latest.getFullYear()) {

@@ -2,9 +2,11 @@
 
 ## Overview
 
-Unkept is a privacy-first web app that transforms a collection of photos (up to 5,000) into a scrollable, editorial-style photo story. It extracts EXIF metadata, generates thumbnails, deduplicates, clusters photos into day-based chapters, and renders a magazine-style narrative — all in the browser.
+Unkept is a privacy-first web app that turns a collection of photos into a Wrapped-style slideshow. EXIF extraction, deduplication, clustering, hero selection, chapter building, thumbnail generation, and blur scoring all run locally in the browser.
 
-**Photos never leave the user's device during processing.** Data only leaves on explicit user action (Share, Generate Captions). Deployable as a static site to Vercel/Netlify.
+**Photos never leave the user's device during processing.** Data only leaves on explicit user action (future: Share, Generate Captions). The output of Phase 1 is a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords). Phase 2 consumes the skeleton and renders the slideshow, enriched with geocoded location labels.
+
+Deployable as a static site.
 
 ---
 
@@ -13,189 +15,247 @@ Unkept is a privacy-first web app that transforms a collection of photos (up to 
 ```
 /  (repo root)
 ├── ARCHITECTURE.md
-├── PLAN-v3.md                           # Implementation plan (current)
-├── EXECUTIVE_SUMMARY.md                 # Product overview + open questions
-├── CLAUDE.md                            # Claude Code guide
-├── client/                              # React + Vite + Tailwind
+├── IMPLEMENTATION-PLAN.md                # Current implementation plan
+├── EXECUTIVE_SUMMARY.md                  # Product overview
+├── MVP.md                                # MVP scope + quality bar
+├── CLAUDE.md                             # Claude Code guide
+├── client/                               # React + Vite + Tailwind (active)
 │   ├── index.html
 │   ├── vite.config.js
 │   ├── tailwind.config.js
 │   ├── postcss.config.js
 │   └── src/
 │       ├── main.jsx
-│       ├── App.jsx                      # Root: toggles UploadPage ↔ StoryView
-│       ├── index.css                    # Tailwind + fade-in animations
+│       ├── App.jsx                       # Compat gate → Upload / Story / Dev routes
+│       ├── index.css                     # Tailwind + slideshow keyframes
 │       ├── lib/
+│       │   ├── compatibility.js          # Web Workers / OffscreenCanvas / cores / memory gate
+│       │   ├── usePipeline.js            # React hook over the orchestrator
+│       │   ├── memoryManager.js          # Blob-URL / File-ref lifecycle tracker
+│       │   ├── validateSkeleton.js       # Runtime shape validator
+│       │   ├── geocode.js                # Nominatim + progressive updates (Part 2)
+│       │   ├── storyBuilder.js           # Skeleton → render-ready Story (frames)
+│       │   ├── skeletonToLegacyStory.js  # Temporary adapter for legacy StoryView
 │       │   ├── pipeline/
-│       │   │   ├── runner.js            # Chains stages, emits progress events
-│       │   │   ├── strategies.js        # Registry of available strategies per stage
+│       │   │   ├── orchestrator.js       # Pure async Phase 1 orchestrator
+│       │   │   ├── runner.js             # Stage chaining + skeleton assembly helpers
+│       │   │   ├── strategies.js         # Registry of swappable strategies per stage
+│       │   │   ├── concurrency.js        # `parallelMap` pool helper
 │       │   │   └── stages/
-│       │   │       ├── dedup.js         # Exact hash + perceptual hash dedup
-│       │   │       ├── cluster.js       # Day-based clustering (swappable)
-│       │   │       ├── heroSelect.js    # Hero photo picker (swappable)
-│       │   │       ├── chapterBuilder.js # Assembles Chapter objects with blocks
-│       │   │       └── geocode.js       # Nominatim with caching + progressive update
+│       │   │       ├── exif.js           # Wraps the EXIF Web Worker
+│       │   │       ├── dedup.js          # Exact hash + perceptual hash dedup
+│       │   │       ├── cluster.js        # Day-based clustering (swappable)
+│       │   │       ├── heroSelect.js     # Hero picker (swappable)
+│       │   │       ├── chapterBuilder.js # Selects photos + assembles chapters
+│       │   │       ├── thumbnail.js      # 200px JPEG data URLs (+ inline variance)
+│       │   │       └── qualityScore.js   # Laplacian variance → 0–1 score
 │       │   └── workers/
-│       │       ├── exif.worker.js       # EXIF extraction in Web Worker
-│       │       └── thumbnail.worker.js  # Thumbnail generation via OffscreenCanvas
-│       └── components/
-│           ├── UploadPage.jsx           # Photo upload UI + pipeline trigger
-│           ├── StoryView.jsx            # Main story layout (cover + chapters)
-│           ├── TableOfContents.jsx      # Inline TOC with chapter list
-│           ├── Chapter.jsx              # Single chapter (header + hero + blocks)
-│           ├── EditablePhotoLayout.jsx  # Mixed editorial photo layouts
-│           └── FadeIn.jsx              # Scroll-triggered fade-in wrapper
-├── server/                              # Express server (Phase 2 — captions, sharing)
-│   ├── index.js
-│   ├── lib/
-│   │   ├── exif.js
-│   │   └── matcher.js
-│   └── routes/
-│       ├── upload.js
-│       ├── itinerary.js
-│       └── story.js
-└── sample/                              # (empty — itinerary.json removed in v2)
+│       │       └── exif.worker.js        # EXIF extraction in a Web Worker
+│       ├── components/
+│       │   ├── CompatibilityBlock.jsx    # Rendered when compat gate fails
+│       │   ├── UploadPage.jsx            # Upload UI + pipeline trigger
+│       │   ├── StoryView.jsx             # Legacy magazine renderer (kept until 2B
+│       │   │                             #   is wired into the main route)
+│       │   ├── Chapter.jsx
+│       │   ├── PhotoLayout.jsx
+│       │   ├── TableOfContents.jsx
+│       │   ├── FadeIn.jsx
+│       │   └── slideshow/                # PR 2B — Wrapped-style slideshow
+│       │       ├── SlideshowPlayer.jsx
+│       │       ├── CoverFrame.jsx
+│       │       ├── ChapterDividerFrame.jsx
+│       │       ├── PhotoCardFrame.jsx
+│       │       ├── CodaFrame.jsx
+│       │       ├── ProgressBar.jsx
+│       │       ├── MusicToggle.jsx
+│       │       └── music/                # Ambient pad synth + playback hook
+│       └── dev/
+│           ├── DevRoute.jsx              # `/dev` — fixture-driven design surface
+│           └── fixtures.js
+└── server/                               # Express stub (Phase 3, not in dev)
 ```
 
 ---
 
-## Data Pipeline
+## Data Pipeline — Phase 1 (Selection)
+
+All stages run locally in the browser. Stage contract: `(input, options, onProgress) => output`. Stages are pure and composable; `orchestrator.js` wires them together. Progress events flow up to `usePipeline` → React.
 
 ```
-Photos[] (up to 5,000)
+Files[] (user upload)
   │
   ▼
-┌─────────────────────────────────────────────────────────┐
-│  1. EXIF Extraction (Web Worker, batches of 50)         │
-│     - exifr.parse() → DateTimeOriginal                  │
-│     - exifr.gps()   → latitude, longitude               │
-│     - Main thread creates objectUrl                     │
-│     Output: PhotoData[] with timestamps + GPS           │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  2. Thumbnail Generation (Web Worker, OffscreenCanvas)  │
-│     - Resize to 400px max dimension                     │
-│     - Export as JPEG blob                               │
-│     - Main thread creates thumbnailUrl                  │
-│     Output: PhotoData[] with thumbnailUrl               │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  3. Deduplication                                       │
-│     - Exact hash: first 64KB + last 64KB + file size    │
-│     - Perceptual: 8×8 grayscale average hash            │
-│     - Hamming distance ≤ 5 = duplicate                  │
-│     Output: PhotoData[] (duplicates removed)            │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  4. Clustering (swappable strategy)                     │
-│     Default "day": group by calendar date               │
-│     Photos without timestamps → "Undated" chapter       │
-│     Output: PhotoData[][] (array of groups)             │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  5. Hero Selection (swappable strategy)                 │
-│     Default "middle": chronological middle photo        │
-│     Output: one PhotoData per group                     │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  6. Chapter Builder                                     │
-│     - Assigns dayIndex, generates "Day N" title         │
-│     - Computes median GPS coords per chapter            │
-│     - Creates blocks: [text (empty), photos]            │
-│     - Sets heroPhoto                                    │
-│     Output: Chapter[] → UI renders immediately          │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼  (async, does not block rendering)
-┌─────────────────────────────────────────────────────────┐
-│  7. Geocoding (progressive)                             │
-│     - Round coords to 3 decimal places (~100m)          │
-│     - Deduplicate locations across chapters             │
-│     - Nominatim API at 1 req/sec                        │
-│     - Updates chapter titles: "Day 1" → "Day 1 — Asakusa" │
-│     - Generates trip_name from countries + date range   │
-│     Output: chapters updated in-place, progressively    │
-└─────────────────────────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│  Render (React components)                              │
-│     - Cover page with trip name, date range, stats      │
-│     - Table of contents                                 │
-│     - Chapters: hero image + block-based content        │
-│     - Scroll-triggered fade-in animations               │
-│     - Location labels fill in progressively             │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  1. EXIF Extraction (Web Worker)                                 │
+│     - exifr.parse → DateTimeOriginal; exifr.gps → lat/lng        │
+│     - Worker isolates the library (keeps main thread responsive) │
+│     Output: PhotoData[] with timestamp + coords                  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  2. Deduplication (parallelMap, concurrency 4)                   │
+│     Pass 1 — Exact hash: first 64KB + last 64KB + file size.     │
+│       Exact duplicates are dropped entirely.                     │
+│     Pass 2 — Perceptual aHash: 16×16 grayscale average hash,     │
+│       hamming distance ≤ 5 ⇒ near-duplicate. Near-duplicates are │
+│       kept as `burstCandidates` (for future live-photo burst     │
+│       rendering) but are not added to any chapter.               │
+│     Output: { photos (representatives), burstGroups,             │
+│               burstCandidates }                                  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  3. Clustering (swappable strategy, default "day")               │
+│     Groups photos by calendar date. Timestamp-less photos land   │
+│     in an "Undated" cluster. Burst data passes through unchanged.│
+│     Output: PhotoData[][] (clusters) + burst metadata            │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  4. Hero Selection (swappable strategy, default "middle")        │
+│     Picks a hero photo per cluster. `heroSelectStage` accepts a  │
+│     `highlightDates: []` option for survey-boosted selection;    │
+│     the survey itself is dropped from MVP and we always pass []. │
+│     Output: { clusters, heroIds: Set<string> }                   │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  5. Chapter Builder                                              │
+│     For each cluster: pick photos, assign heroPhotoId, compute   │
+│     median coords + date. Burst candidates are added to the      │
+│     photos map (so they get thumbnails) but not to chapter       │
+│     photoIds — the renderer can consult `burstGroups` later.     │
+│     Output: { chapters, photos: Map<id, PhotoData>, burstGroups }│
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  6. Thumbnail Generation (OffscreenCanvas, concurrency 4)        │
+│     - Decode → resize to 200px max → JPEG data URL               │
+│     - Inline Laplacian variance on the same canvas pass;         │
+│       stashed on `photo._rawVariance` for qualityScore to reuse  │
+│     - 400px hero tier disabled for MVP (plumbing retained)       │
+│     - HEIC: graceful degradation (`thumbnailFailed: true`)       │
+│     Output: photos mutated with thumbnailUrl                     │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  7. Quality Score (concurrency 4, fast path is arithmetic)       │
+│     Normalises `_rawVariance` to 0–1 via a sigmoid (center=200). │
+│     Falls back to re-decoding the 200px thumbnail if the         │
+│     pre-computed variance isn't present.                         │
+│     Output: photos mutated with qualityScore                     │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Assemble Story Skeleton (`runner.assembleSkeleton`)             │
+│     - Strip File references                                      │
+│     - Revoke any remaining blob URLs                             │
+│     - Serialise photos-by-id map, chapters with photoIds only,   │
+│       burstGroups, and meta (dateRange, counts)                  │
+│     Output: Story Skeleton JSON (fully serialisable)             │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+              Phase 1 done; hand to Phase 2
 ```
+
+### Concurrency
+
+Stages that were previously `for … await` now use `parallelMap` from `lib/pipeline/concurrency.js`, which runs up to 4 photos in flight at a time. dedup pass 1 (byte hash), dedup pass 2 (perceptual hash), thumbnail, and qualityScore all use this. The sequential "first-wins" merge in dedup pass 2 still runs in order after the parallel hash computation so ordering is stable.
+
+See `IMPLEMENTATION-PLAN.md` → *Phase 1 performance notes* for open threads: worker hoist for thumbnail/dedup, combining dedup pass 2 with thumbnail decode (both decode each file today), and benchmarking the pool size.
+
+---
+
+## Data Pipeline — Phase 2 (Story)
+
+```
+Story Skeleton (JSON) + user intent to view
+  │
+  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Geocoding (network, 1 req/s; Nominatim)                         │
+│     - Round coords to 3 decimal places (~100m) and dedup per     │
+│       chapter so we hit the rate limit less hard                 │
+│     - Fills location/country labels + trip_name                  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  storyBuilder.js (Phase 2 data layer)                            │
+│     - Picks photos per chapter (hero + next N-1 by qualityScore) │
+│     - Chooses a PhotoCardFrame layout by orientation mix         │
+│     - Assembles frames: cover → chapter dividers → photo cards → │
+│       coda                                                       │
+│     Output: Story (render-ready; frames, not blocks)             │
+└──────────────────────────┬───────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  SlideshowPlayer.jsx                                             │
+│     State machine: idle → playing → paused → finished            │
+│     Auto-advances through frames; tap to pause / skip; bundled   │
+│     ambient music (see `components/slideshow/music`).            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Until the slideshow is wired into the main route, `UploadPage` still uses `skeletonToLegacyStory.js` to adapt the skeleton to the older `StoryView`/`Chapter`/`PhotoLayout` shape. This adapter is explicitly temporary and is deleted once the slideshow replaces StoryView on the main route.
 
 ---
 
 ## Data Models
 
-### PhotoData
+### PhotoData (in-pipeline, mutable)
+
+Carried between stages. Has a live `file: File` reference until thumbnails are generated; stripped before serialisation. `_rawVariance` is a scratch field set by thumbnail, consumed and deleted by qualityScore.
+
 ```js
 {
-  id: "photo_0_IMG_1234.jpg",        // unique identifier
-  file: File,                         // original File object
+  id: "photo_0",
   name: "IMG_1234.jpg",
-  timestamp: "2025-03-15T08:30:00Z", // from EXIF, or null
-  latitude: 35.6762,                  // from EXIF GPS, or null
-  longitude: 139.6503,
-  objectUrl: "blob:...",              // full-res blob URL
-  thumbnailUrl: "blob:...",           // 400px canvas-generated thumbnail
-  hash: "a1b2c3d4...",               // for dedup (exact + perceptual)
-  caption: null,                      // string | null — future feature
+  file: File,                              // present only during Phase 1
+  timestamp: "2025-03-15T08:30:00Z" | null,
+  coords: { lat: 35.6762, lng: 139.6503 } | null,
+  thumbnailUrl: "data:image/jpeg;base64,…" | null,
+  thumbnailHeroUrl: null,                  // 400px tier disabled for MVP
+  thumbnailFailed: false,
+  qualityScore: 0.0–1.0 | null,
+  faces: null,
+  _rawVariance: number | null,             // scratch, removed by qualityScore
 }
 ```
 
-### Chapter
+### Story Skeleton (Phase 1 output, serialisable)
+
 ```js
 {
-  id: "chapter_001",
-  title: "Day 1 — Asakusa",          // stored, not computed; updatable
-  date: "2025-03-15",                 // single date, derived from photos
-  dayIndex: 0,                        // 0-based, for "Day N" label
-
-  location: {
-    coords: { lat: 35.714, lng: 139.797 }, // median GPS, or null
-    label: "Asakusa, Tokyo",               // from Nominatim, null until resolved
-    country: "Japan",                      // from Nominatim, null until resolved
+  version: "1.0",
+  generatedAt: "2025-03-20T14:00:00Z",
+  photos: {                                // photos-by-id map
+    photo_0: { id, name, timestamp, coords, thumbnailUrl,
+               thumbnailHeroUrl, thumbnailFailed, qualityScore, faces },
+    …
   },
-
-  heroPhoto: PhotoData,               // selected by hero selection stage
-
-  blocks: [                           // ordered content blocks
-    {
-      type: "text",
-      id: "blk_001",
-      content: "",                    // empty initially, editable placeholder
-    },
-    {
-      type: "photos",
-      id: "blk_002",
-      photos: PhotoData[],            // all photos for this day
-    },
+  chapters: [
+    { id, photoIds: [...], heroPhotoId, date, coords },
+    …
   ],
+  burstGroups: [
+    { representativeId, candidateIds: [...] },
+    …
+  ],
+  meta: {
+    totalPhotosInput: number,
+    totalPhotosAfterDedup: number,
+    totalChapters: number,
+    dateRange: { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } | null,
+    surveyResponses: {},                   // kept for shape stability;
+                                           // always {} now that the
+                                           // MVP survey is dropped
+  },
 }
 ```
 
-### Story
-```js
-{
-  trip_name: "Japan, March 2025",     // auto-generated from countries + date range
-  chapters: Chapter[],
-}
-```
+### Story (Phase 2 output — rendered directly by SlideshowPlayer)
+
+Produced by `storyBuilder.js`. Shape is captured in that module and the slideshow components that consume it.
 
 ---
 
@@ -203,20 +263,13 @@ Photos[] (up to 5,000)
 
 ### Always client-side
 - EXIF extraction
-- Thumbnail generation
-- Duplicate detection
-- Clustering and chapter building
-- Photo rendering via blob URLs
-- All user editing (titles, text blocks)
+- Deduplication, clustering, hero selection, chapter building
+- Thumbnail generation + blur scoring
+- Geocoding (network, but to Nominatim directly — no server proxy)
+- All rendering
 
-### Server-side (only on explicit user action)
-- **"Generate Captions":** Sends curated thumbnails (~20KB each) + chapter metadata → Claude API proxy
-- **"Share":** Uploads curated thumbnails + story data → cloud storage for shareable link
-
-### Server never receives
-- Original full-resolution photos
-- Rejected duplicates or removed photos
-- Any data before explicit user action
+### Server-side (Phase 3 stub, not in active dev)
+- Planned: Generate Captions, Share. Both would receive curated thumbnails (data URLs, ~20KB each) + metadata. Original full-res photos never leave the device.
 
 ---
 
@@ -225,18 +278,17 @@ Photos[] (up to 5,000)
 | Decision | Rationale |
 |---|---|
 | Local-first processing | Photos never leave the device during processing; privacy by default |
-| Explicit data boundary | Only curated thumbnails + metadata sent on user action |
-| Modular pipeline | Pure function stages, swappable strategies, easy to extend |
-| Progressive rendering | Chapters render immediately; geocoding fills in async |
-| Day-based clustering | Predictable chapters, natural narrative ("Day 1, Day 2...") |
-| Block-based chapters | Supports text + photos, future editing capabilities |
-| Web Workers | EXIF + thumbnails off main thread, UI stays responsive at 5K photos |
-| Coordinate dedup for geocoding | 3 decimal places (~100m) collapses 50+ chapters to ~15 requests |
-| No new dependencies | Web Workers, OffscreenCanvas, canvas hashing are all browser APIs |
-| No itinerary feature | Removed in v2; can return as a clustering strategy |
-| No drag-and-drop | dnd-kit removed; future editing via block-based model |
-
-See `DECISIONS-v2.md` for detailed rationale on each decision.
+| Compatibility gate | Blocks the app pre-pipeline if Workers / OffscreenCanvas / ≥4 cores / ≥4GB memory aren't present — no half-broken pipeline on unsupported devices |
+| Story Skeleton as the hand-off | Phase 1 produces fully serialisable JSON with embedded data URLs; Phase 2 is a pure function of that JSON (modulo geocoding). Enables test fixtures, persistence, and a clean module boundary |
+| Modular pipeline | Pure function stages, swappable strategies (via `strategies.js`), easy to extend |
+| Day-based clustering (default) | Predictable chapters, natural narrative |
+| Web Worker for EXIF only (today) | Keeps the `exifr` library off the main thread; hoisting thumbnail/dedup into a worker is an open perf thread |
+| Bounded concurrency via `parallelMap` | Pool of 4 workers keeps the browser busy without thrashing memory with too many decoded bitmaps at once |
+| Inline Laplacian variance | Thumbnail already has the pixel data; computing variance on the same canvas pass saves one decode per photo in qualityScore |
+| Data-URL thumbnails | Serialisable into the skeleton; no blob-URL lifecycle to track after Phase 1 |
+| Coordinate dedup for geocoding | 3 decimal places (~100m) collapses many chapters into ~15 Nominatim requests |
+| No itinerary / no drag-and-drop | Removed with the MVP refocus; editorial UI is out of MVP scope |
+| No open-source release | Project is private-learning-focused; do not suggest making public |
 
 ---
 
@@ -244,16 +296,18 @@ See `DECISIONS-v2.md` for detailed rationale on each decision.
 
 | Photos | Expected behavior |
 |--------|-------------------|
-| 100 | Near-instant processing |
-| 500 | Smooth, progress bar visible |
-| 2,000 | 10–20s processing, UI stays responsive |
-| 5,000 | 30–60s processing, UI stays responsive, progressive geocoding |
+| 100    | Near-instant processing |
+| 500    | Smooth, progress bar visible |
+| 2,000  | 10–20s processing, UI stays responsive |
+| 5,000  | 30–60s processing, UI stays responsive |
+
+April 2026 testing: the new pipeline (with dedup + blur scoring + two-pass hashing) does roughly 3× more work per photo than the pre-Phase 1 impl. Mitigations shipped: concurrency 4, inline variance, 400px tier disabled. See `IMPLEMENTATION-PLAN.md` → *Phase 1 performance notes* for the open threads.
 
 ---
 
 ## Browser Support
 
-Chrome, Firefox, Safari 16.4+ (modern browsers only). No fallbacks for `OffscreenCanvas` or Web Workers.
+Chrome, Firefox, Safari 16.4+ (modern browsers only). The compatibility gate hard-blocks devices without Web Workers, OffscreenCanvas, ≥4 logical cores, or ≥4GB device memory (where reported).
 
 ---
 
@@ -263,11 +317,12 @@ Chrome, Firefox, Safari 16.4+ (modern browsers only). No fallbacks for `Offscree
 | Package | Purpose |
 |---|---|
 | react, react-dom | UI framework |
-| exifr | EXIF metadata extraction (used inside Web Worker) |
+| exifr | EXIF metadata extraction (inside a Web Worker) |
 | tailwindcss | Utility CSS |
 | vite, @vitejs/plugin-react | Build tooling |
+| vitest | Unit testing |
 
-### Server (Phase 2)
+### Server (Phase 3 — stub)
 | Package | Purpose |
 |---|---|
 | express | HTTP server |

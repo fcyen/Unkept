@@ -1,0 +1,110 @@
+/**
+ * Phase 1 orchestrator — runs the full pipeline (EXIF → dedup → cluster →
+ * hero → chapter → thumbnail → quality) and assembles a Story Skeleton.
+ *
+ * Extracted from `usePipeline` so the orchestration logic is testable
+ * without React. The hook is a thin state-holding wrapper around this.
+ */
+import { exifStage } from './stages/exif.js';
+import { dedupStage } from './stages/dedup.js';
+import { clusterStage } from './stages/cluster.js';
+import { heroSelectStage } from './stages/heroSelect.js';
+import { chapterBuilderStage } from './stages/chapterBuilder.js';
+import { thumbnailStage } from './stages/thumbnail.js';
+import { qualityScoreStage } from './stages/qualityScore.js';
+import { assembleSkeleton } from './runner.js';
+import { createMemoryManager } from '../memoryManager.js';
+
+export const PHASES = Object.freeze({
+  IDLE: 'idle',
+  RUNNING: 'running',
+  DONE: 'done',
+  ERROR: 'error',
+});
+
+/**
+ * Run the full Phase 1 pipeline and return a Story Skeleton.
+ *
+ * @param {File[]} files
+ * @param {object} deps
+ * @param {(phase: string) => void} [deps.onPhase]
+ * @param {(event: { stage: string, progress: number, total: number }) => void} [deps.onProgress]
+ * @param {object} [deps.stages]
+ *        override any of the stage functions — used only for testing
+ * @returns {Promise<object>} Story Skeleton
+ */
+export async function runPhase1(files, deps = {}) {
+  const {
+    onPhase = noop,
+    onProgress = noop,
+    stages: stageOverrides = {},
+  } = deps;
+
+  const stages = {
+    exif: exifStage,
+    dedup: dedupStage,
+    cluster: clusterStage,
+    heroSelect: heroSelectStage,
+    chapterBuilder: chapterBuilderStage,
+    thumbnail: thumbnailStage,
+    qualityScore: qualityScoreStage,
+    ...stageOverrides,
+  };
+
+  const mm = createMemoryManager();
+
+  onPhase(PHASES.RUNNING);
+
+  const emit = (stage) => (progress, total) =>
+    onProgress({ stage, progress, total });
+
+  const photos = await stages.exif(files, {}, emit('exif'));
+  const dedupResult = await stages.dedup(photos, {}, emit('dedup'));
+  const clusterResult = await stages.cluster(dedupResult, {}, emit('cluster'));
+
+  const heroResult = await stages.heroSelect(
+    clusterResult,
+    { highlightDates: [] },
+    emit('heroSelect'),
+  );
+
+  const chapterResult = await stages.chapterBuilder(
+    heroResult,
+    {},
+    emit('chapterBuilder'),
+  );
+
+  const thumbResult = await stages.thumbnail(
+    chapterResult,
+    {},
+    emit('thumbnail'),
+  );
+
+  const qualityResult = await stages.qualityScore(
+    thumbResult,
+    {},
+    emit('qualityScore'),
+  );
+
+  // Strip File references before serialising the skeleton.
+  mm.stripFileReferences(qualityResult.photos);
+
+  const skeleton = assembleSkeleton(
+    {
+      chapters: qualityResult.chapters,
+      photos: qualityResult.photos,
+      burstGroups: chapterResult.burstGroups,
+    },
+    {
+      totalPhotosInput: files.length,
+      totalPhotosAfterDedup: dedupResult.photos.length,
+    },
+  );
+
+  mm.revokeAll();
+  onPhase(PHASES.DONE);
+
+  return skeleton;
+}
+
+function noop() {}
