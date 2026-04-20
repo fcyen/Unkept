@@ -243,14 +243,28 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 **PR 1C: Expensive pipeline stages** **[done]**
 - `stages/heroSelect.js` — survey-weighted selection (runs before thumbnail gen)
 - `stages/chapterBuilder.js` — selects which photos appear in story; output drives thumbnail generation
-- `stages/thumbnail.js` — OffscreenCanvas; selected photos only; 200px standard + 400px hero (desktop); HEIC graceful degradation. (Currently runs on main thread; worker hoist is a later follow-up.)
-- `stages/qualityScore.js` — blur detection (Laplacian variance) on 200px thumbnails
+- `stages/thumbnail.js` — OffscreenCanvas; selected photos only; 200px standard. Laplacian variance is computed inline from the same canvas pass and stashed on `photo._rawVariance` so `qualityScoreStage` can skip a second decode. (Runs on main thread; worker hoist is a later follow-up.)
+- `stages/qualityScore.js` — normalises pre-computed Laplacian variance to a 0–1 score (fast path); falls back to decoding the 200px thumbnail if variance isn't stashed
+- `lib/pipeline/concurrency.js` — small `parallelMap` helper used by dedup / thumbnail / qualityScore to run ~4 photos in flight at once instead of one-at-a-time
 - `lib/validateSkeleton.js` — `isValidSkeleton(json)` schema validator; used in tests and in dev-mode runtime assertions
 - `stages/chapterBuilder.test.js` — output passes `isValidSkeleton`; all chapters have a heroPhotoId; no File objects or blob URLs in output
 
 **PR 1D: Memory manager** **[done]**
 - `lib/memoryManager.js` — tracks blob URLs by stage, revokes on trigger
 - Integrated into the Phase 1 orchestrator (`stripFileReferences` after thumbnail, `revokeAll` on completion)
+
+**Phase 1 performance notes (open threads to revisit)**
+
+Testing in April 2026 surfaced that the new pipeline feels noticeably slower than the pre-Phase 1 impl. Reasons, with what we've already done and what's still open:
+
+- *Work per photo roughly tripled.* Old impl: 1 decode (thumbnail). New impl: byte-hash (dedup pass 1), 16×16 decode (dedup pass 2), 200px decode (thumbnail), Laplacian pass (quality). Most of this is new capability (dedup, blur scoring) not pure overhead, so the fix is to run it more efficiently rather than cut features.
+- *Mitigations shipped:* `parallelMap` with concurrency 4 on dedup / thumbnail / qualityScore; Laplacian variance computed inline on the thumbnail canvas (saves one decode per photo); 400px hero tier disabled for MVP.
+- *Still on the table:*
+  - Hoist thumbnail + dedup into a Web Worker — today everything but EXIF runs on the main thread, which both blocks React and cannot exploit a second core beyond what `parallelMap` gets from async I/O interleaving.
+  - Merge dedup pass 2 (perceptual hash) with thumbnail decode — we decode each file twice today (16×16 for aHash, 200px for thumbnail). Combining into one decode + two resizes would roughly halve decode cost across the two stages.
+  - Revisit `qualityScore` placement — since it's now free when thumbnail ran successfully, we could fold it into the thumbnail stage entirely and drop the separate stage, or keep it for architectural clarity. Not urgent; flagged for when we revisit stages.
+  - Re-enable 400px hero tier only for the slideshow cover/divider frames, not every hero, once we know what the renderer actually needs.
+  - Benchmark a typical 500-photo trip on a mid-range Android to confirm the pool size (4) is right — it's a guess, not measured.
 
 **Integration** **[done]**
 - `lib/skeletonToLegacyStory.js` — adapter from Story Skeleton to the legacy `StoryView`/`Chapter`/`PhotoLayout` shape so the magazine renderer runs on top of the new pipeline. Temporary — deleted once PR 2B replaces `StoryView` with the skeleton-native slideshow.

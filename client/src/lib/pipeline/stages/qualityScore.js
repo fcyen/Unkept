@@ -4,19 +4,18 @@
  * Pipeline stage signature:
  *   ({ chapters, photos }: ThumbnailOutput, options, onProgress) => { chapters, photos }
  *
- * Computes a quality score (0–1) for each selected photo using Laplacian
- * variance on the 200px thumbnail. Higher variance = sharper image = higher score.
+ * Normalises Laplacian variance to a 0–1 quality score. The variance is
+ * pre-computed by the thumbnail stage (see `_rawVariance`) so the fast
+ * path is just arithmetic and we avoid a second decode per photo.
  *
- * The Laplacian kernel detects edges; blurry images have low edge response.
- * Score is normalised to 0–1 range using a sigmoid curve.
+ * If `_rawVariance` is missing (e.g. in tests that stub the thumbnail
+ * stage, or if thumbnail generation failed) we fall back to decoding the
+ * 200px thumbnail data URL and running the Laplacian pass here.
  */
 
-/**
- * Compute Laplacian variance on a data URL image.
- * Returns a raw variance value (not normalised).
- */
+import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
+
 async function computeLaplacianVariance(dataUrl) {
-  // Decode the data URL to an ImageBitmap
   const response = await fetch(dataUrl);
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
@@ -30,14 +29,12 @@ async function computeLaplacianVariance(dataUrl) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
 
-  // Convert to grayscale
   const gray = new Float32Array(width * height);
   for (let i = 0; i < width * height; i++) {
     const offset = i * 4;
     gray[i] = 0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2];
   }
 
-  // Apply 3x3 Laplacian kernel: [0, 1, 0; 1, -4, 1; 0, 1, 0]
   let sum = 0;
   let sumSq = 0;
   let count = 0;
@@ -46,11 +43,11 @@ async function computeLaplacianVariance(dataUrl) {
     for (let x = 1; x < width - 1; x++) {
       const idx = y * width + x;
       const laplacian =
-        gray[idx - width] +     // top
-        gray[idx + width] +     // bottom
-        gray[idx - 1] +         // left
-        gray[idx + 1] -         // right
-        4 * gray[idx];          // center
+        gray[idx - width] +
+        gray[idx + width] +
+        gray[idx - 1] +
+        gray[idx + 1] -
+        4 * gray[idx];
 
       sum += laplacian;
       sumSq += laplacian * laplacian;
@@ -59,50 +56,57 @@ async function computeLaplacianVariance(dataUrl) {
   }
 
   if (count === 0) return 0;
-
   const mean = sum / count;
-  const variance = (sumSq / count) - (mean * mean);
-
-  return Math.max(0, variance);
+  return Math.max(0, sumSq / count - mean * mean);
 }
 
 /**
- * Normalise Laplacian variance to a 0–1 score using a sigmoid.
- * Typical sharp photos: variance > 500
- * Typical blurry photos: variance < 100
+ * Sigmoid centered at 200 variance, steepness 0.01.
+ * Typical sharp photos: variance > 500. Typical blurry photos: variance < 100.
  */
 function normaliseScore(variance) {
-  // Sigmoid centered at 200, steepness 0.01
   const score = 1 / (1 + Math.exp(-0.01 * (variance - 200)));
-  return Math.round(score * 1000) / 1000; // 3 decimal places
+  return Math.round(score * 1000) / 1000;
 }
 
 /**
  * @param {{ chapters: Chapter[], photos: Map<string, PhotoData> }} input
- * @param {object} options
+ * @param {{ concurrency?: number }} options
  * @param {(done: number, total: number) => void} onProgress
  * @returns {Promise<{ chapters: Chapter[], photos: Map<string, PhotoData> }>}
  */
 export async function qualityScoreStage(input, options = {}, onProgress) {
   const { chapters, photos } = input;
-  const total = photos.size;
-  let done = 0;
+  const concurrency = options.concurrency ?? DEFAULT_STAGE_CONCURRENCY;
 
-  for (const [id, photo] of photos) {
-    if (photo.thumbnailUrl && !photo.thumbnailFailed) {
+  const entries = [...photos.entries()];
+
+  await parallelMap(
+    entries,
+    concurrency,
+    async ([, photo]) => {
+      // Fast path: thumbnail stage already computed raw variance on the
+      // 200px canvas; we just normalise and drop the scratch field.
+      if (photo._rawVariance != null) {
+        photo.qualityScore = normaliseScore(photo._rawVariance);
+        delete photo._rawVariance;
+        return;
+      }
+
+      if (!photo.thumbnailUrl || photo.thumbnailFailed) {
+        photo.qualityScore = null;
+        return;
+      }
+
       try {
         const variance = await computeLaplacianVariance(photo.thumbnailUrl);
         photo.qualityScore = normaliseScore(variance);
       } catch {
         photo.qualityScore = null;
       }
-    } else {
-      photo.qualityScore = null;
-    }
-
-    done++;
-    if (onProgress) onProgress(done, total);
-  }
+    },
+    onProgress,
+  );
 
   return { chapters, photos };
 }
