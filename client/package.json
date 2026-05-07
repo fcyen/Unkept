@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:debug": "vite --mode debug",
     "build": "vite build",
+    "build:debug": "vite build --mode debug",
     "preview": "vite preview",
     "test": "vitest run"
   },
