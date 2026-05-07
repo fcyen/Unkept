@@ -17,7 +17,9 @@ const PipelineDebugRoute = import.meta.env.MODE === 'debug'
 
 const isDebugMode = import.meta.env.MODE === 'debug';
 const isDevRoute      = isDebugMode && window.location.pathname === '/dev';
-const isPipelineRoute = isDebugMode && window.location.pathname === '/pipeline';
+const isPipelineRoute = isDebugMode && (
+  window.location.pathname === '/pipeline' || window.location.pathname === '/'
+);
 
 // Run once at module load — gate the app before any pipeline code runs.
 const compatibility = checkCompatibility();
