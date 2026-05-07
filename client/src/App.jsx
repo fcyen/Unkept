@@ -1,15 +1,23 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import UploadPage from './components/UploadPage.jsx';
 import SlideshowPlayer from './components/slideshow/SlideshowPlayer.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
-import DevRoute from './dev/DevRoute.jsx';
-import PipelineDebugRoute from './dev/PipelineDebugRoute.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
 
-const isDevRoute =
-  typeof window !== 'undefined' && window.location.pathname === '/dev';
-const isPipelineRoute =
-  typeof window !== 'undefined' && window.location.pathname === '/pipeline';
+// Debug routes are lazy-imported and only resolved when MODE === 'debug'.
+// Vite replaces import.meta.env.MODE with a literal string at build time,
+// so Rollup tree-shakes the dynamic import() calls in non-debug builds —
+// the dev route files are absent from the bundle entirely.
+const DevRoute = import.meta.env.MODE === 'debug'
+  ? lazy(() => import('./dev/DevRoute.jsx'))
+  : null;
+const PipelineDebugRoute = import.meta.env.MODE === 'debug'
+  ? lazy(() => import('./dev/PipelineDebugRoute.jsx'))
+  : null;
+
+const isDebugMode = import.meta.env.MODE === 'debug';
+const isDevRoute      = isDebugMode && window.location.pathname === '/dev';
+const isPipelineRoute = isDebugMode && window.location.pathname === '/pipeline';
 
 // Run once at module load — gate the app before any pipeline code runs.
 const compatibility = checkCompatibility();
@@ -17,14 +25,12 @@ const compatibility = checkCompatibility();
 export default function App() {
   const [story, setStory] = useState(null);
 
-  // Simple pathname-based routing — Vite's dev server SPA fallback lets
-  // `/dev` resolve to index.html. No router library needed.
   if (isPipelineRoute) {
-    return <PipelineDebugRoute />;
+    return <Suspense fallback={null}><PipelineDebugRoute /></Suspense>;
   }
 
   if (isDevRoute) {
-    return <DevRoute />;
+    return <Suspense fallback={null}><DevRoute /></Suspense>;
   }
 
   if (!compatibility.passed) {
