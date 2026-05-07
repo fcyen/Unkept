@@ -97,8 +97,20 @@ function extractSnapshot(name, output) {
       for (const p of output) {
         perPhoto[p.id] = {
           name: p.name,
+          size: p.size ?? null,
+          timestamp: p.timestamp ?? null,
           date: p.timestamp ? fmtDate(p.timestamp) : null,
           hasGPS: p.coords != null,
+          coords: p.coords ?? null,
+          make: p.make ?? null,
+          model: p.model ?? null,
+          lensModel: p.lensModel ?? null,
+          iso: p.iso ?? null,
+          fNumber: p.fNumber ?? null,
+          exposureTime: p.exposureTime ?? null,
+          width: p.width ?? null,
+          height: p.height ?? null,
+          orientation: p.orientation ?? null,
         };
       }
       return { count: output.length, perPhoto };

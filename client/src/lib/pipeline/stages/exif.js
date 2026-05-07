@@ -29,11 +29,21 @@ export async function exifStage(files, options, onProgress) {
           results[item.index] = {
             id: `photo_${item.index}`,
             name: item.name,
+            size: item.size,
             file: files[item.index],
             timestamp: item.timestamp,
             coords: item.latitude != null && item.longitude != null
               ? { lat: item.latitude, lng: item.longitude }
               : null,
+            make: item.make ?? null,
+            model: item.model ?? null,
+            lensModel: item.lensModel ?? null,
+            iso: item.iso ?? null,
+            fNumber: item.fNumber ?? null,
+            exposureTime: item.exposureTime ?? null,
+            width: item.width ?? null,
+            height: item.height ?? null,
+            orientation: item.orientation ?? null,
             thumbnailUrl: null,
             thumbnailHeroUrl: null,
             thumbnailFailed: false,

@@ -19,8 +19,15 @@ export default function PipelineDebugRoute() {
   const { phase, progress, snapshots, error, run, getPreviewUrl, revokeAll } = usePipelineDebug();
   const [selectedStage, setSelectedStage] = useState('qualityScore');
   const [sortByScore, setSortByScore] = useState(false);
+  const [selectedPhotoId, setSelectedPhotoId] = useState(null);
 
   useEffect(() => () => revokeAll(), [revokeAll]);
+
+  // Clear selection when stage changes
+  const handleStageSelect = (stage) => {
+    setSelectedStage(stage);
+    setSelectedPhotoId(null);
+  };
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -64,15 +71,26 @@ export default function PipelineDebugRoute() {
             running={phase === PHASES.RUNNING}
             progress={progress}
             selected={selectedStage}
-            onSelect={setSelectedStage}
+            onSelect={handleStageSelect}
           />
           <StageStats stage={selectedStage} snapshots={snapshots} />
+          {selectedPhotoId && (
+            <PhotoDetail
+              photoId={selectedPhotoId}
+              stage={selectedStage}
+              snapshots={snapshots}
+              getPreviewUrl={getPreviewUrl}
+              onClose={() => setSelectedPhotoId(null)}
+            />
+          )}
           <PhotoGrid
             snapshots={snapshots}
             stage={selectedStage}
             getPreviewUrl={getPreviewUrl}
             sortByScore={sortByScore}
             onToggleSort={() => setSortByScore((s) => !s)}
+            selectedPhotoId={selectedPhotoId}
+            onSelectPhoto={setSelectedPhotoId}
           />
         </main>
       )}
@@ -241,7 +259,7 @@ function StageStats({ stage, snapshots }) {
 
 // ── PhotoGrid ────────────────────────────────────────────────────────────────
 
-function PhotoGrid({ snapshots, stage, getPreviewUrl, sortByScore, onToggleSort }) {
+function PhotoGrid({ snapshots, stage, getPreviewUrl, sortByScore, onToggleSort, selectedPhotoId, onSelectPhoto }) {
   const exifSnap = snapshots.exif;
   if (!exifSnap) return null;
 
@@ -253,6 +271,7 @@ function PhotoGrid({ snapshots, stage, getPreviewUrl, sortByScore, onToggleSort 
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs text-muted uppercase tracking-wide">
           {allIds.length} photos · {STAGE_LABELS[stage] ?? stage}
+          {selectedPhotoId && <span className="ml-2 normal-case">· click to deselect</span>}
         </p>
         <button className="text-xs text-muted underline underline-offset-2" onClick={onToggleSort}>
           {sortByScore ? 'Original order' : 'Sort by score'}
@@ -266,6 +285,8 @@ function PhotoGrid({ snapshots, stage, getPreviewUrl, sortByScore, onToggleSort 
             stage={stage}
             snapshots={snapshots}
             getPreviewUrl={getPreviewUrl}
+            isSelected={id === selectedPhotoId}
+            onSelect={() => onSelectPhoto(id === selectedPhotoId ? null : id)}
           />
         ))}
       </div>
@@ -312,7 +333,7 @@ function getNumericScore(id, stage, snapshots) {
 
 // ── PhotoCard ────────────────────────────────────────────────────────────────
 
-function PhotoCard({ photoId, stage, snapshots, getPreviewUrl }) {
+function PhotoCard({ photoId, stage, snapshots, getPreviewUrl, isSelected, onSelect }) {
   const thumbSnap = snapshots.thumbnail?.perPhoto?.[photoId];
   const imgUrl = thumbSnap?.thumbnailUrl ?? getPreviewUrl(photoId);
   const exifData = snapshots.exif?.perPhoto?.[photoId];
@@ -327,11 +348,16 @@ function PhotoCard({ photoId, stage, snapshots, getPreviewUrl }) {
 
   return (
     <div
-      className={`relative rounded overflow-hidden border border-faint bg-white aspect-square transition-opacity ${
-        inStage ? '' : 'opacity-20'
-      }`}
+      onClick={onSelect}
+      className={`relative rounded overflow-hidden border bg-white aspect-square transition-all cursor-pointer ${
+        isSelected
+          ? 'border-ink ring-2 ring-ink ring-offset-1'
+          : clusterIdx != null
+          ? 'border-faint'
+          : 'border-faint hover:border-ink/40'
+      } ${inStage ? '' : 'opacity-20'}`}
       style={
-        clusterIdx != null
+        !isSelected && clusterIdx != null
           ? { borderColor: CLUSTER_PALETTE[clusterIdx % CLUSTER_PALETTE.length], borderWidth: 2 }
           : undefined
       }
@@ -362,6 +388,95 @@ function PhotoCard({ photoId, stage, snapshots, getPreviewUrl }) {
       )}
     </div>
   );
+}
+
+// ── PhotoDetail ───────────────────────────────────────────────────────────────
+
+function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
+  const exif = snapshots.exif?.perPhoto?.[photoId];
+  const thumbSnap = snapshots.thumbnail?.perPhoto?.[photoId];
+  const imgUrl = thumbSnap?.thumbnailUrl ?? getPreviewUrl(photoId);
+
+  if (!exif) return null;
+
+  const rows = [
+    ['File',     exif.name],
+    ['Size',     exif.size != null ? fmtBytes(exif.size) : null],
+    ['Date',     exif.timestamp ? new Date(exif.timestamp).toLocaleString() : null],
+    ['GPS',      exif.coords ? `${exif.coords.lat.toFixed(5)}, ${exif.coords.lng.toFixed(5)}` : null],
+    ['Camera',   [exif.make, exif.model].filter(Boolean).join(' ') || null],
+    ['Lens',     exif.lensModel],
+    ['ISO',      exif.iso != null ? String(exif.iso) : null],
+    ['Aperture', exif.fNumber != null ? `f/${exif.fNumber}` : null],
+    ['Shutter',  exif.exposureTime != null ? fmtExposure(exif.exposureTime) : null],
+    ['Dimensions', exif.width && exif.height ? `${exif.width} × ${exif.height}` : null],
+    ['Orientation', exif.orientation != null ? String(exif.orientation) : null],
+  ].filter(([, v]) => v != null);
+
+  // Stage scores across all completed stages for this photo
+  const stageScores = STAGE_ORDER
+    .filter((s) => snapshots[s])
+    .map((s) => {
+      const p = snapshots[s]?.perPhoto?.[photoId];
+      if (!p) return { stage: s, label: 'removed' };
+      const ann = getAnnotation(photoId, s, snapshots);
+      return { stage: s, label: ann?.label ?? '—', color: ann?.color ?? '#9ca3af' };
+    });
+
+  return (
+    <div className="rounded-lg border border-ink/20 bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-faint">
+        <p className="text-sm font-mono text-ink truncate">{exif.name}</p>
+        <button
+          onClick={onClose}
+          className="text-muted hover:text-ink ml-4 shrink-0 text-lg leading-none"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="flex gap-0 divide-x divide-faint">
+        {imgUrl && (
+          <div className="shrink-0 w-36 h-36">
+            <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
+        <div className="flex-1 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-0.5 content-start">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex gap-2 col-span-1">
+              <dt className="text-xs text-muted shrink-0 w-20">{label}</dt>
+              <dd className="text-xs font-mono text-ink truncate">{value}</dd>
+            </div>
+          ))}
+        </div>
+        <div className="shrink-0 px-4 py-3 space-y-1">
+          <p className="text-xs text-muted uppercase tracking-wide mb-2">Stage scores</p>
+          {stageScores.map(({ stage: s, label, color }) => (
+            <div key={s} className="flex items-center gap-2">
+              <span className="text-xs text-muted w-16 shrink-0">{STAGE_LABELS[s]}</span>
+              <span
+                className="text-xs font-mono px-1.5 py-0.5 rounded text-white"
+                style={{ backgroundColor: color + 'dd' }}
+              >
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fmtExposure(t) {
+  if (t >= 1) return `${t}s`;
+  const denom = Math.round(1 / t);
+  return `1/${denom}s`;
 }
 
 function getAnnotation(photoId, stage, snapshots) {
