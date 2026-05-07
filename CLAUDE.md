@@ -29,7 +29,6 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Target: no File references survive past chapter building
 
 ## Key decisions
-- No open source — do not suggest making code public
 - Nominatim for geocoding (Part 2 only — it's a network call)
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
