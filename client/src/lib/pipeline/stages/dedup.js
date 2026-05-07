@@ -226,6 +226,7 @@ export async function dedupStage(photos, options = {}, onProgress) {
       keptHashes.push(pHash);
     } else {
       photo._hammingDistance = matchedDist;
+      photo._matchedRepId = keptEntries[matchedRepIdx].photo.id;
       burstCandidates.push(photo);
       const repId = keptEntries[matchedRepIdx].photo.id;
       let group = burstGroupsByRepId.get(repId);

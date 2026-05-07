@@ -460,6 +460,20 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
       return { stage: s, label: ann?.label ?? '—', color: ann?.color ?? '#9ca3af' };
     });
 
+  // Dedup pair view: when inspecting a burst photo, show its matched rep;
+  // when inspecting a kept rep that absorbed candidates, show them.
+  const dedupSnap = snapshots.dedup?.perPhoto?.[photoId];
+  const dedupPairs = (() => {
+    if (stage !== 'dedup' || !dedupSnap) return null;
+    if (dedupSnap.status === 'burst' && dedupSnap.matchedRepId) {
+      return { heading: 'Matched representative', items: [{ id: dedupSnap.matchedRepId, dist: dedupSnap.score }] };
+    }
+    if (dedupSnap.status === 'kept' && dedupSnap.candidates?.length) {
+      return { heading: 'Burst candidates absorbed', items: dedupSnap.candidates };
+    }
+    return null;
+  })();
+
   return (
     <div className="rounded-lg border border-ink/20 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-faint">
@@ -500,6 +514,28 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
           ))}
         </div>
       </div>
+      {dedupPairs && (
+        <div className="px-4 py-3 border-t border-faint">
+          <p className="text-xs text-muted uppercase tracking-wide mb-2">{dedupPairs.heading}</p>
+          <div className="flex gap-2 flex-wrap">
+            {dedupPairs.items.map(({ id, dist }) => {
+              const pairThumb = snapshots.thumbnail?.perPhoto?.[id]?.thumbnailUrl ?? getPreviewUrl(id);
+              const pairName = snapshots.exif?.perPhoto?.[id]?.name ?? id;
+              return (
+                <div key={id} className="shrink-0 w-24">
+                  {pairThumb ? (
+                    <img src={pairThumb} alt="" className="w-24 h-24 object-cover rounded border border-faint" />
+                  ) : (
+                    <div className="w-24 h-24 rounded border border-faint bg-faint" />
+                  )}
+                  <p className="text-[10px] font-mono text-ink truncate mt-1">{pairName}</p>
+                  <p className="text-[10px] font-mono text-muted">d={dist ?? '?'}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

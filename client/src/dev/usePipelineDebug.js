@@ -118,14 +118,28 @@ function extractSnapshot(name, output) {
 
     case 'dedup': {
       const perPhoto = {};
+      const candidatesByRep = {};
+      for (const p of output.burstCandidates) {
+        const repId = p._matchedRepId ?? null;
+        perPhoto[p.id] = {
+          status: 'burst',
+          score: p._hammingDistance ?? null,
+          matchedRepId: repId,
+        };
+        if (repId) {
+          if (!candidatesByRep[repId]) candidatesByRep[repId] = [];
+          candidatesByRep[repId].push({ id: p.id, dist: p._hammingDistance ?? null });
+        }
+      }
       for (const p of (output.rejectedExact ?? [])) {
         perPhoto[p.id] = { status: 'exact', score: null };
       }
       for (const p of output.photos) {
-        perPhoto[p.id] = { status: 'kept', score: null };
-      }
-      for (const p of output.burstCandidates) {
-        perPhoto[p.id] = { status: 'burst', score: p._hammingDistance ?? null };
+        perPhoto[p.id] = {
+          status: 'kept',
+          score: null,
+          candidates: candidatesByRep[p.id] ?? null,
+        };
       }
       return {
         keptCount: output.photos.length,
