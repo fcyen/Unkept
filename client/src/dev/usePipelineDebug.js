@@ -32,6 +32,15 @@ export function usePipelineDebug() {
     previewUrlsRef.current.clear();
   }, []);
 
+  const reset = useCallback(() => {
+    revokeAll();
+    setPhase(PHASES.IDLE);
+    setProgress(null);
+    setSnapshots({});
+    setError(null);
+    capturedRef.current = {};
+  }, [revokeAll]);
+
   const run = useCallback(async (files) => {
     revokeAll();
     setPhase(PHASES.RUNNING);
@@ -87,7 +96,7 @@ export function usePipelineDebug() {
     }
   }, [revokeAll]);
 
-  return { phase, progress, snapshots, error, run, getPreviewUrl, revokeAll };
+  return { phase, progress, snapshots, error, run, reset, getPreviewUrl, revokeAll };
 }
 
 function extractSnapshot(name, output) {
