@@ -1,0 +1,444 @@
+import { useEffect, useState } from 'react';
+import { PHASES } from '../lib/pipeline/orchestrator.js';
+import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
+
+const CLUSTER_PALETTE = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#ec4899', '#06b6d4', '#f97316',
+];
+
+function scoreToColor(score) {
+  if (score == null) return '#9ca3af';
+  const c = Math.max(0, Math.min(1, score));
+  if (c >= 0.7) return '#22c55e';
+  if (c >= 0.4) return '#f59e0b';
+  return '#ef4444';
+}
+
+export default function PipelineDebugRoute() {
+  const { phase, progress, snapshots, error, run, getPreviewUrl, revokeAll } = usePipelineDebug();
+  const [selectedStage, setSelectedStage] = useState('qualityScore');
+  const [sortByScore, setSortByScore] = useState(false);
+
+  useEffect(() => () => revokeAll(), [revokeAll]);
+
+  return (
+    <div className="min-h-screen bg-cream text-ink">
+      <header className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-3xl">/pipeline</h1>
+          <p className="text-muted text-sm mt-1">
+            Phase 1 inspector — per-photo scoring at every stage.
+          </p>
+        </div>
+        {phase !== PHASES.IDLE && (
+          <button
+            className="text-sm text-muted underline underline-offset-2"
+            onClick={() => window.location.reload()}
+          >
+            New run
+          </button>
+        )}
+      </header>
+
+      {phase === PHASES.IDLE && <DropZone onDrop={run} />}
+
+      {phase === PHASES.RUNNING && !snapshots.exif && (
+        <div className="max-w-7xl mx-auto px-6 py-12 text-center text-muted">
+          Reading EXIF data…
+        </div>
+      )}
+
+      {error && (
+        <div className="max-w-7xl mx-auto px-6 mb-6">
+          <div className="rounded bg-red-50 border border-red-200 p-4 text-red-800 text-sm font-mono">
+            {error.message}
+          </div>
+        </div>
+      )}
+
+      {snapshots.exif && (
+        <main className="max-w-7xl mx-auto px-6 pb-12 space-y-5">
+          <StageTimeline
+            snapshots={snapshots}
+            running={phase === PHASES.RUNNING}
+            progress={progress}
+            selected={selectedStage}
+            onSelect={setSelectedStage}
+          />
+          <StageStats stage={selectedStage} snapshots={snapshots} />
+          <PhotoGrid
+            snapshots={snapshots}
+            stage={selectedStage}
+            getPreviewUrl={getPreviewUrl}
+            sortByScore={sortByScore}
+            onToggleSort={() => setSortByScore((s) => !s)}
+          />
+        </main>
+      )}
+    </div>
+  );
+}
+
+// ── DropZone ────────────────────────────────────────────────────────────────
+
+function DropZone({ onDrop }) {
+  const [dragging, setDragging] = useState(false);
+
+  const handleFiles = (files) => {
+    const images = [...files].filter(
+      (f) => f.type.startsWith('image/') || /\.heic$/i.test(f.name),
+    );
+    if (images.length > 0) onDrop(images);
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-6 py-12">
+      <label
+        className={`block border-2 border-dashed rounded-xl p-20 text-center cursor-pointer transition-colors ${
+          dragging ? 'border-ink bg-ink/5' : 'border-faint hover:border-ink/40'
+        }`}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+      >
+        <input
+          type="file"
+          accept="image/*,.heic"
+          multiple
+          className="sr-only"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+        <p className="text-xl text-muted">Drop photos here or click to browse</p>
+        <p className="text-sm text-faint mt-2">JPG · PNG · HEIC — any batch size</p>
+      </label>
+    </div>
+  );
+}
+
+// ── StageTimeline ────────────────────────────────────────────────────────────
+
+function StageTimeline({ snapshots, running, progress, selected, onSelect }) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {STAGE_ORDER.map((stage) => {
+        const snap = snapshots[stage];
+        const isActive = running && progress?.stage === stage;
+        const isDone = !!snap;
+        const isSelected = selected === stage;
+
+        return (
+          <button
+            key={stage}
+            onClick={() => snap && onSelect(stage)}
+            disabled={!snap}
+            className={`flex-1 min-w-[100px] px-3 py-2.5 rounded-lg border text-left transition-colors ${
+              isSelected
+                ? 'border-ink bg-ink text-cream'
+                : isDone
+                ? 'border-faint bg-white hover:border-ink/50 cursor-pointer'
+                : 'border-faint bg-white/50 opacity-40 cursor-default'
+            }`}
+          >
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span
+                className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                  isActive
+                    ? 'bg-amber-400 animate-pulse'
+                    : isDone
+                    ? 'bg-green-500'
+                    : 'bg-faint'
+                }`}
+              />
+              <span className="text-xs font-medium uppercase tracking-wide truncate">
+                {STAGE_LABELS[stage]}
+              </span>
+            </div>
+            <div className="text-xs font-mono opacity-80 truncate">
+              {snap ? stageStat(stage, snap) : '—'}
+            </div>
+            {snap?.timing != null && (
+              <div className="text-xs font-mono opacity-50 mt-0.5">{snap.timing}ms</div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function stageStat(stage, snap) {
+  switch (stage) {
+    case 'exif':         return `${snap.count} photos`;
+    case 'dedup':        return `${snap.keptCount} kept · ${snap.exactCount + snap.burstCount} removed`;
+    case 'cluster':      return `${snap.clusterCount} clusters`;
+    case 'heroSelect':   return `${snap.heroCount} hero${snap.heroCount !== 1 ? 's' : ''}`;
+    case 'chapterBuilder': return `${snap.chapterCount} chapters · ${snap.selectedCount} photos`;
+    case 'thumbnail':    return `${snap.generatedCount} ok · ${snap.failedCount} failed`;
+    case 'qualityScore': return `avg ${snap.avgScore?.toFixed(3) ?? '—'}`;
+    default: return '';
+  }
+}
+
+// ── StageStats ───────────────────────────────────────────────────────────────
+
+function StageStats({ stage, snapshots }) {
+  const snap = snapshots[stage];
+  if (!snap) return null;
+
+  let lines = [];
+  switch (stage) {
+    case 'exif': {
+      const photos = Object.values(snap.perPhoto);
+      const withDate = photos.filter((p) => p.date).length;
+      const withGPS  = photos.filter((p) => p.hasGPS).length;
+      lines = [`${snap.count} photos · ${withDate} with timestamp · ${withGPS} with GPS`];
+      break;
+    }
+    case 'dedup':
+      lines = [
+        `${snap.keptCount} unique · ${snap.exactCount} exact duplicate${snap.exactCount !== 1 ? 's' : ''} · ${snap.burstCount} burst candidate${snap.burstCount !== 1 ? 's' : ''}`,
+        'Burst candidates are perceptually similar photos (hamming distance ≤ 5). Score shown is the distance.',
+      ];
+      break;
+    case 'cluster':
+      lines = [`${Object.keys(snap.perPhoto).length} photos → ${snap.clusterCount} clusters (grouped by calendar day).`];
+      break;
+    case 'heroSelect':
+      lines = [`${snap.heroCount} hero${snap.heroCount !== 1 ? 's' : ''} selected using middle-photo heuristic. Stars mark heroes.`];
+      break;
+    case 'chapterBuilder': {
+      const roles = Object.values(snap.perPhoto);
+      const burstOnly = roles.filter((r) => r.role === 'burst-only').length;
+      lines = [
+        `${snap.chapterCount} chapters · ${snap.selectedCount} photos in story · ${burstOnly} burst-only (thumbnails generated, not shown in story).`,
+      ];
+      break;
+    }
+    case 'thumbnail':
+      lines = [
+        `${snap.generatedCount} thumbnails at 200px JPEG.${snap.failedCount > 0 ? ` ${snap.failedCount} failed (likely HEIC).` : ''}`,
+        'Score is raw Laplacian variance — the unscaled blur signal. Higher = sharper. Compare with Quality stage to see normalization.',
+      ];
+      break;
+    case 'qualityScore':
+      lines = [
+        `Score = sigmoid(variance − 200) × 0.01, normalised 0–1. Sharp photos typically > 0.7, blurry < 0.4.`,
+        `Range: ${snap.minScore?.toFixed(3) ?? '—'} – ${snap.maxScore?.toFixed(3) ?? '—'} · avg ${snap.avgScore?.toFixed(3) ?? '—'}`,
+      ];
+      break;
+    default: break;
+  }
+
+  return (
+    <div className="rounded-lg border border-faint bg-white px-4 py-3 space-y-1">
+      {lines.map((l, i) => (
+        <p key={i} className="text-sm text-muted">{l}</p>
+      ))}
+    </div>
+  );
+}
+
+// ── PhotoGrid ────────────────────────────────────────────────────────────────
+
+function PhotoGrid({ snapshots, stage, getPreviewUrl, sortByScore, onToggleSort }) {
+  const exifSnap = snapshots.exif;
+  if (!exifSnap) return null;
+
+  const allIds = Object.keys(exifSnap.perPhoto);
+  const sorted = sortByScore ? sortIds(allIds, stage, snapshots) : allIds;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-muted uppercase tracking-wide">
+          {allIds.length} photos · {STAGE_LABELS[stage] ?? stage}
+        </p>
+        <button className="text-xs text-muted underline underline-offset-2" onClick={onToggleSort}>
+          {sortByScore ? 'Original order' : 'Sort by score'}
+        </button>
+      </div>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))' }}>
+        {sorted.map((id) => (
+          <PhotoCard
+            key={id}
+            photoId={id}
+            stage={stage}
+            snapshots={snapshots}
+            getPreviewUrl={getPreviewUrl}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function sortIds(ids, stage, snapshots) {
+  return [...ids].sort((a, b) => {
+    const sa = getNumericScore(a, stage, snapshots);
+    const sb = getNumericScore(b, stage, snapshots);
+    if (sa == null && sb == null) return 0;
+    if (sa == null) return 1;
+    if (sb == null) return -1;
+    return sb - sa; // descending
+  });
+}
+
+function getNumericScore(id, stage, snapshots) {
+  const snap = snapshots[stage];
+  if (!snap) return null;
+  const p = snap.perPhoto?.[id];
+  if (!p) return null;
+  switch (stage) {
+    case 'dedup':
+      if (p.status === 'kept')  return 1;
+      if (p.status === 'exact') return 0;
+      if (p.status === 'burst') return p.score != null ? Math.max(0, 1 - p.score / 10) : 0.5;
+      return null;
+    case 'heroSelect':
+      return p.isHero ? 1 : 0;
+    case 'cluster':
+      return p.clusterIdx != null ? p.clusterIdx : null; // sort by group
+    case 'chapterBuilder':
+      return p.chapterIdx != null ? p.chapterIdx : (p.role === 'burst-only' ? 999 : null);
+    case 'thumbnail':
+      return p.rawVariance ?? (p.status === 'ok' ? 0 : -1);
+    case 'qualityScore':
+      return p.score;
+    default:
+      return null;
+  }
+}
+
+// ── PhotoCard ────────────────────────────────────────────────────────────────
+
+function PhotoCard({ photoId, stage, snapshots, getPreviewUrl }) {
+  const thumbSnap = snapshots.thumbnail?.perPhoto?.[photoId];
+  const imgUrl = thumbSnap?.thumbnailUrl ?? getPreviewUrl(photoId);
+  const exifData = snapshots.exif?.perPhoto?.[photoId];
+  const annotation = getAnnotation(photoId, stage, snapshots);
+
+  const stageSnap = snapshots[stage];
+  const inStage = !stageSnap || stageSnap.perPhoto?.[photoId] != null;
+
+  const clusterIdx = stage === 'cluster'
+    ? (snapshots.cluster?.perPhoto?.[photoId]?.clusterIdx ?? null)
+    : null;
+
+  return (
+    <div
+      className={`relative rounded overflow-hidden border border-faint bg-white aspect-square transition-opacity ${
+        inStage ? '' : 'opacity-20'
+      }`}
+      style={
+        clusterIdx != null
+          ? { borderColor: CLUSTER_PALETTE[clusterIdx % CLUSTER_PALETTE.length], borderWidth: 2 }
+          : undefined
+      }
+    >
+      {imgUrl ? (
+        <img src={imgUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center p-2">
+          <span className="text-xs text-muted text-center break-all leading-tight">
+            {exifData?.name ?? photoId}
+          </span>
+        </div>
+      )}
+
+      {stage === 'heroSelect' && snapshots.heroSelect?.perPhoto?.[photoId]?.isHero && (
+        <div className="absolute top-1 right-1 text-sm leading-none drop-shadow">★</div>
+      )}
+
+      {annotation && (
+        <div className="absolute bottom-0 inset-x-0">
+          <div
+            className="px-1.5 py-0.5 text-white text-xs font-mono leading-tight truncate"
+            style={{ backgroundColor: annotation.color + 'dd' }}
+          >
+            {annotation.label}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getAnnotation(photoId, stage, snapshots) {
+  const snap = snapshots[stage];
+  if (!snap) return null;
+  const p = snap.perPhoto?.[photoId];
+
+  switch (stage) {
+    case 'exif': {
+      if (!p) return null;
+      const parts = [];
+      if (p.date) parts.push(p.date.slice(5)); // MM-DD
+      if (p.hasGPS) parts.push('GPS');
+      if (!parts.length) parts.push('no meta');
+      const score = p.date ? (p.hasGPS ? 1 : 0.6) : 0.2;
+      return { label: parts.join(' · '), color: scoreToColor(score) };
+    }
+
+    case 'dedup': {
+      if (!p) return { label: 'n/a', color: '#9ca3af' };
+      if (p.status === 'kept')  return { label: 'kept',   color: scoreToColor(1) };
+      if (p.status === 'exact') return { label: 'exact',  color: scoreToColor(0) };
+      if (p.status === 'burst') {
+        const dist = p.score;
+        return {
+          label: dist != null ? `burst d=${dist}` : 'burst',
+          color: scoreToColor(dist != null ? Math.max(0, 1 - dist / 10) : 0.5),
+        };
+      }
+      return null;
+    }
+
+    case 'cluster': {
+      if (!p) return { label: 'removed', color: '#9ca3af' };
+      return {
+        label: `cluster ${p.clusterIdx + 1}`,
+        color: CLUSTER_PALETTE[p.clusterIdx % CLUSTER_PALETTE.length],
+      };
+    }
+
+    case 'heroSelect': {
+      if (!p) return { label: 'removed', color: '#9ca3af' };
+      return p.isHero
+        ? { label: 'hero',    color: '#d97706' }
+        : { label: 'regular', color: '#6b7280' };
+    }
+
+    case 'chapterBuilder': {
+      if (!p) return { label: 'removed', color: '#9ca3af' };
+      if (p.role === 'burst-only') return { label: 'burst only', color: '#7c3aed' };
+      const label = p.chapterId
+        ? `ch.${p.chapterIdx + 1}${p.isHero ? ' ★' : ''}`
+        : 'n/a';
+      return { label, color: p.isHero ? '#d97706' : '#3b82f6' };
+    }
+
+    case 'thumbnail': {
+      if (!p) return { label: 'no thumb', color: '#9ca3af' };
+      if (p.status === 'failed') return { label: 'failed', color: scoreToColor(0) };
+      const variance = p.rawVariance;
+      if (variance != null) {
+        const score = 1 / (1 + Math.exp(-0.01 * (variance - 200)));
+        return { label: `var ${Math.round(variance)}`, color: scoreToColor(score) };
+      }
+      return { label: 'ok', color: scoreToColor(0.5) };
+    }
+
+    case 'qualityScore': {
+      if (!p) return { label: 'no score', color: '#9ca3af' };
+      const score = p.score;
+      return {
+        label: score != null ? score.toFixed(3) : 'null',
+        color: scoreToColor(score),
+      };
+    }
+
+    default:
+      return null;
+  }
+}

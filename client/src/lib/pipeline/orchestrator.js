@@ -37,6 +37,8 @@ export async function runPhase1(files, deps = {}) {
   const {
     onPhase = noop,
     onProgress = noop,
+    onStageStart = noop,
+    onStageComplete = noop,
     stages: stageOverrides = {},
   } = deps;
 
@@ -58,33 +60,49 @@ export async function runPhase1(files, deps = {}) {
   const emit = (stage) => (progress, total) =>
     onProgress({ stage, progress, total });
 
+  onStageStart('exif');
   const photos = await stages.exif(files, {}, emit('exif'));
-  const dedupResult = await stages.dedup(photos, {}, emit('dedup'));
-  const clusterResult = await stages.cluster(dedupResult, {}, emit('cluster'));
+  onStageComplete('exif', photos);
 
+  onStageStart('dedup');
+  const dedupResult = await stages.dedup(photos, {}, emit('dedup'));
+  onStageComplete('dedup', dedupResult);
+
+  onStageStart('cluster');
+  const clusterResult = await stages.cluster(dedupResult, {}, emit('cluster'));
+  onStageComplete('cluster', clusterResult);
+
+  onStageStart('heroSelect');
   const heroResult = await stages.heroSelect(
     clusterResult,
     { highlightDates: [] },
     emit('heroSelect'),
   );
+  onStageComplete('heroSelect', heroResult);
 
+  onStageStart('chapterBuilder');
   const chapterResult = await stages.chapterBuilder(
     heroResult,
     {},
     emit('chapterBuilder'),
   );
+  onStageComplete('chapterBuilder', chapterResult);
 
+  onStageStart('thumbnail');
   const thumbResult = await stages.thumbnail(
     chapterResult,
     {},
     emit('thumbnail'),
   );
+  onStageComplete('thumbnail', thumbResult);
 
+  onStageStart('qualityScore');
   const qualityResult = await stages.qualityScore(
     thumbResult,
     {},
     emit('qualityScore'),
   );
+  onStageComplete('qualityScore', qualityResult);
 
   // Strip File references before serialising the skeleton.
   mm.stripFileReferences(qualityResult.photos);

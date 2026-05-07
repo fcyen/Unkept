@@ -145,8 +145,12 @@ export async function dedupStage(photos, options = {}, onProgress) {
 
   const exactHashMap = new Map(); // hash -> index of first occurrence
   const afterExact = [];
+  const rejectedExact = [];
   for (let i = 0; i < photos.length; i++) {
-    if (exactHashMap.has(exactHashes[i])) continue;
+    if (exactHashMap.has(exactHashes[i])) {
+      rejectedExact.push(photos[i]);
+      continue;
+    }
     exactHashMap.set(exactHashes[i], i);
     afterExact.push(photos[i]);
   }
@@ -189,10 +193,13 @@ export async function dedupStage(photos, options = {}, onProgress) {
     }
 
     let matchedRepIdx = -1;
+    let matchedDist = -1;
     for (let j = 0; j < keptHashes.length; j++) {
       if (keptHashes[j] === null) continue;
-      if (hammingDistance(pHash, keptHashes[j]) <= threshold) {
+      const dist = hammingDistance(pHash, keptHashes[j]);
+      if (dist <= threshold) {
         matchedRepIdx = j;
+        matchedDist = dist;
         break;
       }
     }
@@ -201,6 +208,7 @@ export async function dedupStage(photos, options = {}, onProgress) {
       kept.push(photo);
       keptHashes.push(pHash);
     } else {
+      photo._hammingDistance = matchedDist;
       burstCandidates.push(photo);
       const repId = kept[matchedRepIdx].id;
       let group = burstGroupsByRepId.get(repId);
@@ -218,6 +226,7 @@ export async function dedupStage(photos, options = {}, onProgress) {
     photos: kept,
     burstGroups: [...burstGroupsByRepId.values()],
     burstCandidates,
+    rejectedExact,
   };
 }
 
