@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PHASES } from '../lib/pipeline/orchestrator.js';
 import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
+import sampleImageUrls from 'virtual:sample-images';
 
 const CLUSTER_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
@@ -15,13 +16,33 @@ function scoreToColor(score) {
   return '#ef4444';
 }
 
+async function loadSampleFiles() {
+  return Promise.all(
+    sampleImageUrls.map(async (url) => {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const name = url.split('/').pop();
+      const type = blob.type || (name.match(/\.heic$/i) ? 'image/heic' : 'image/jpeg');
+      return new File([blob], name, { type });
+    }),
+  );
+}
+
 export default function PipelineDebugRoute() {
   const { phase, progress, snapshots, error, run, getPreviewUrl, revokeAll } = usePipelineDebug();
   const [selectedStage, setSelectedStage] = useState('qualityScore');
   const [sortByScore, setSortByScore] = useState(false);
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
+  const autoStarted = useRef(false);
 
   useEffect(() => () => revokeAll(), [revokeAll]);
+
+  // Auto-load sample images on first mount if any are configured.
+  useEffect(() => {
+    if (autoStarted.current || sampleImageUrls.length === 0) return;
+    autoStarted.current = true;
+    loadSampleFiles().then(run);
+  }, [run]);
 
   // Clear selection when stage changes
   const handleStageSelect = (stage) => {
@@ -48,11 +69,13 @@ export default function PipelineDebugRoute() {
         )}
       </header>
 
-      {phase === PHASES.IDLE && <DropZone onDrop={run} />}
+      {phase === PHASES.IDLE && <DropZone onDrop={run} hasSamples={sampleImageUrls.length > 0} />}
 
       {phase === PHASES.RUNNING && !snapshots.exif && (
         <div className="max-w-7xl mx-auto px-6 py-12 text-center text-muted">
-          Reading EXIF data…
+          {sampleImageUrls.length > 0
+            ? `Loading ${sampleImageUrls.length} sample image${sampleImageUrls.length !== 1 ? 's' : ''}…`
+            : 'Reading EXIF data…'}
         </div>
       )}
 
@@ -100,7 +123,7 @@ export default function PipelineDebugRoute() {
 
 // ── DropZone ────────────────────────────────────────────────────────────────
 
-function DropZone({ onDrop }) {
+function DropZone({ onDrop, hasSamples }) {
   const [dragging, setDragging] = useState(false);
 
   const handleFiles = (files) => {
@@ -111,9 +134,23 @@ function DropZone({ onDrop }) {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-12">
+    <div className="max-w-7xl mx-auto px-6 py-12 space-y-4">
+      {hasSamples && (
+        <div className="flex items-center justify-between rounded-lg border border-faint bg-white px-4 py-3">
+          <p className="text-sm text-muted">
+            {sampleImageUrls.length} sample image{sampleImageUrls.length !== 1 ? 's' : ''} in{' '}
+            <code className="font-mono text-xs">public/sample-images/</code>
+          </p>
+          <button
+            className="text-sm px-3 py-1 rounded-full bg-ink text-cream hover:bg-black"
+            onClick={() => loadSampleFiles().then(onDrop)}
+          >
+            Load samples
+          </button>
+        </div>
+      )}
       <label
-        className={`block border-2 border-dashed rounded-xl p-20 text-center cursor-pointer transition-colors ${
+        className={`block border-2 border-dashed rounded-xl p-16 text-center cursor-pointer transition-colors ${
           dragging ? 'border-ink bg-ink/5' : 'border-faint hover:border-ink/40'
         }`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
