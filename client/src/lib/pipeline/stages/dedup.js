@@ -11,6 +11,10 @@
  * 2. Perceptual hash: 16px grayscale average hash, hamming distance comparison
  *    Near-duplicates become burst candidates — preserved for live-photo
  *    rendering in PR 2F but not shown as individual photos in the story.
+ *    Pass 2 sorts by filename and only compares each photo against the last
+ *    PERCEPTUAL_WINDOW kept reps — bursts are temporally local and cameras
+ *    name files monotonically, so a global compare is unnecessary and would
+ *    collapse unrelated repeat-subject shots.
  *
  * Blob URLs for rejected duplicates are revoked immediately.
  */
@@ -19,6 +23,7 @@ import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const CHUNK_SIZE = 65536; // 64KB
 const DEFAULT_HAMMING_THRESHOLD = 5;
+const PERCEPTUAL_WINDOW = 10;
 
 /**
  * Read first and last 64KB of a file, combined with file size, to produce
@@ -156,12 +161,20 @@ export async function dedupStage(photos, options = {}, onProgress) {
   }
 
   // Pass 2: compute perceptual hashes in parallel, then resolve near-duplicates
-  // sequentially so the "first wins" ordering is stable.
+  // by walking photos in filename order. Camera filenames are monotonic, so
+  // adjacency in filename order is a strong proxy for "taken close in time" —
+  // and bursts are by definition temporally local.
+  const filenameOrdered = afterExact
+    .map((photo, originalIdx) => ({ photo, originalIdx }))
+    .sort((a, b) =>
+      a.photo.file.name.localeCompare(b.photo.file.name, undefined, { numeric: true }),
+    );
+
   let passTwoDone = 0;
   const perceptualHashes = await parallelMap(
-    afterExact,
+    filenameOrdered,
     DEFAULT_STAGE_CONCURRENCY,
-    async (photo) => {
+    async ({ photo }) => {
       try {
         return await computePerceptualHash(photo.file);
       } catch {
@@ -172,29 +185,30 @@ export async function dedupStage(photos, options = {}, onProgress) {
     },
     () => {
       passTwoDone++;
-      const overall = 0.4 * total + (passTwoDone / afterExact.length) * 0.6 * total;
+      const overall = 0.4 * total + (passTwoDone / filenameOrdered.length) * 0.6 * total;
       if (onProgress) onProgress(Math.round(overall), total);
     },
   );
 
-  const kept = [];
+  const keptEntries = []; // { photo, originalIdx }
   const keptHashes = [];
   const burstCandidates = [];
   const burstGroupsByRepId = new Map();
 
-  for (let i = 0; i < afterExact.length; i++) {
-    const photo = afterExact[i];
+  for (let i = 0; i < filenameOrdered.length; i++) {
+    const { photo, originalIdx } = filenameOrdered[i];
     const pHash = perceptualHashes[i];
 
     if (pHash === null) {
-      kept.push(photo);
+      keptEntries.push({ photo, originalIdx });
       keptHashes.push(null);
       continue;
     }
 
     let matchedRepIdx = -1;
     let matchedDist = -1;
-    for (let j = 0; j < keptHashes.length; j++) {
+    const windowStart = Math.max(0, keptHashes.length - PERCEPTUAL_WINDOW);
+    for (let j = keptHashes.length - 1; j >= windowStart; j--) {
       if (keptHashes[j] === null) continue;
       const dist = hammingDistance(pHash, keptHashes[j]);
       if (dist <= threshold) {
@@ -205,12 +219,12 @@ export async function dedupStage(photos, options = {}, onProgress) {
     }
 
     if (matchedRepIdx === -1) {
-      kept.push(photo);
+      keptEntries.push({ photo, originalIdx });
       keptHashes.push(pHash);
     } else {
       photo._hammingDistance = matchedDist;
       burstCandidates.push(photo);
-      const repId = kept[matchedRepIdx].id;
+      const repId = keptEntries[matchedRepIdx].photo.id;
       let group = burstGroupsByRepId.get(repId);
       if (!group) {
         group = { representativeId: repId, candidateIds: [] };
@@ -219,6 +233,10 @@ export async function dedupStage(photos, options = {}, onProgress) {
       group.candidateIds.push(photo.id);
     }
   }
+
+  // Restore input order so downstream stages aren't surprised.
+  keptEntries.sort((a, b) => a.originalIdx - b.originalIdx);
+  const kept = keptEntries.map((e) => e.photo);
 
   if (onProgress) onProgress(total, total);
 
