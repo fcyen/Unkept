@@ -56,39 +56,42 @@ async function computeExactHash(file) {
 }
 
 /**
- * Compute an average-hash (aHash) perceptual fingerprint.
- * Resizes image to 16x16 grayscale, then produces a 256-bit hash
- * based on whether each pixel is above or below the mean.
+ * Compute a difference-hash (dHash) perceptual fingerprint.
+ * Resizes image to 17x16 grayscale, then for each row emits 16 bits where
+ * bit i is 1 iff pixel[i] > pixel[i+1]. dHash captures horizontal gradients
+ * and is more discriminative than aHash for "same scene, different subject"
+ * cases, since two photos of the same room have similar overall brightness
+ * (high aHash collision) but different edge structure.
  *
  * Returns a Uint8Array of 32 bytes (256 bits).
  */
 async function computePerceptualHash(file) {
   const bitmap = await createImageBitmap(file);
-  const canvas = new OffscreenCanvas(16, 16);
+  const canvas = new OffscreenCanvas(17, 16);
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, 16, 16);
+  ctx.drawImage(bitmap, 0, 0, 17, 16);
   bitmap.close();
 
-  const imageData = ctx.getImageData(0, 0, 16, 16);
+  const imageData = ctx.getImageData(0, 0, 17, 16);
   const pixels = imageData.data;
 
-  // Convert to grayscale values
-  const gray = new Uint8Array(256);
-  let sum = 0;
-  for (let i = 0; i < 256; i++) {
+  // Convert to grayscale values (17 * 16 = 272 pixels)
+  const gray = new Uint8Array(272);
+  for (let i = 0; i < 272; i++) {
     const offset = i * 4;
-    const g = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
-    gray[i] = g;
-    sum += g;
+    gray[i] = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
   }
 
-  const mean = sum / 256;
-
-  // Generate hash: 1 bit per pixel, 1 if above mean
+  // Generate hash: 16 bits per row, bit i is 1 iff pixel[i] > pixel[i+1].
+  // 16 rows * 16 bits = 256 bits.
   const hash = new Uint8Array(32);
-  for (let i = 0; i < 256; i++) {
-    if (gray[i] >= mean) {
-      hash[Math.floor(i / 8)] |= (1 << (i % 8));
+  for (let row = 0; row < 16; row++) {
+    const rowStart = row * 17;
+    for (let col = 0; col < 16; col++) {
+      if (gray[rowStart + col] > gray[rowStart + col + 1]) {
+        const bitIdx = row * 16 + col;
+        hash[bitIdx >> 3] |= (1 << (bitIdx & 7));
+      }
     }
   }
 
