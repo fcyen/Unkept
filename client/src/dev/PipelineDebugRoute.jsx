@@ -29,20 +29,28 @@ async function loadSampleFiles() {
 }
 
 export default function PipelineDebugRoute() {
-  const { phase, progress, snapshots, error, run, getPreviewUrl, revokeAll } = usePipelineDebug();
+  const { phase, progress, snapshots, error, run, reset, getPreviewUrl, revokeAll } = usePipelineDebug();
   const [selectedStage, setSelectedStage] = useState('qualityScore');
   const [sortByScore, setSortByScore] = useState(false);
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
+  const [userDidReset, setUserDidReset] = useState(false);
   const autoStarted = useRef(false);
 
   useEffect(() => () => revokeAll(), [revokeAll]);
 
-  // Auto-load sample images on first mount if any are configured.
+  // Auto-load sample images on first mount. Skipped if the user clicked
+  // "New run" (userDidReset), since they want to choose photos manually.
   useEffect(() => {
-    if (autoStarted.current || sampleImageUrls.length === 0) return;
+    if (autoStarted.current || userDidReset || sampleImageUrls.length === 0) return;
     autoStarted.current = true;
     loadSampleFiles().then(run);
-  }, [run]);
+  }, [run, userDidReset]);
+
+  const handleNewRun = () => {
+    reset();
+    setUserDidReset(true);
+    setSelectedPhotoId(null);
+  };
 
   // Clear selection when stage changes
   const handleStageSelect = (stage) => {
@@ -62,7 +70,7 @@ export default function PipelineDebugRoute() {
         {phase !== PHASES.IDLE && (
           <button
             className="text-sm text-muted underline underline-offset-2"
-            onClick={() => window.location.reload()}
+            onClick={handleNewRun}
           >
             New run
           </button>
