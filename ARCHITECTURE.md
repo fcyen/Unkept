@@ -89,10 +89,14 @@ Files[] (user upload)
 │  2. Deduplication (parallelMap, concurrency 4)                   │
 │     Pass 1 — Exact hash: first 64KB + last 64KB + file size.     │
 │       Exact duplicates are dropped entirely.                     │
-│     Pass 2 — Perceptual aHash: 16×16 grayscale average hash,     │
-│       hamming distance ≤ 5 ⇒ near-duplicate. Near-duplicates are │
-│       kept as `burstCandidates` (for future live-photo burst     │
-│       rendering) but are not added to any chapter.               │
+│     Pass 2 — Block-mean perceptual hash: 32×32 grayscale → 8×8   │
+│       grid of 4×4 block means → 64-bit hash (bit i = mean[i] >   │
+│       median). Hamming distance ≤ 10 ⇒ near-duplicate. Survivors │
+│       are sorted by filename and each is compared only against   │
+│       the last 5 kept reps (bursts are temporally local; cameras │
+│       name files monotonically). Near-duplicates are kept as     │
+│       `burstCandidates` for future live-photo rendering but are  │
+│       not added to any chapter.                                  │
 │     Output: { photos (representatives), burstGroups,             │
 │               burstCandidates }                                  │
 └──────────────────────────┬───────────────────────────────────────┘
@@ -153,7 +157,7 @@ Files[] (user upload)
 
 ### Concurrency
 
-Stages that were previously `for … await` now use `parallelMap` from `lib/pipeline/concurrency.js`, which runs up to 4 photos in flight at a time. dedup pass 1 (byte hash), dedup pass 2 (perceptual hash), thumbnail, and qualityScore all use this. The sequential "first-wins" merge in dedup pass 2 still runs in order after the parallel hash computation so ordering is stable.
+Stages that were previously `for … await` now use `parallelMap` from `lib/pipeline/concurrency.js`, which runs up to 4 photos in flight at a time. dedup pass 1 (byte hash), dedup pass 2 (perceptual hash), thumbnail, and qualityScore all use this. The merge in dedup pass 2 runs sequentially over photos sorted by filename — for each photo we scan the last 5 kept reps for a hamming match, picking the closest one if any are within threshold.
 
 See `IMPLEMENTATION-PLAN.md` → *Phase 1 performance notes* for open threads: worker hoist for thumbnail/dedup, combining dedup pass 2 with thumbnail decode (both decode each file today), and benchmarking the pool size.
 
