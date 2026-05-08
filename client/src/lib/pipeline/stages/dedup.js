@@ -23,7 +23,7 @@ import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const CHUNK_SIZE = 65536; // 64KB
 const DEFAULT_HAMMING_THRESHOLD = 5;
-const PERCEPTUAL_WINDOW = 10;
+const PERCEPTUAL_WINDOW = 5;
 
 /**
  * Read first and last 64KB of a file, combined with file size, to produce
@@ -65,7 +65,7 @@ async function computeExactHash(file) {
  *
  * Returns a Uint8Array of 32 bytes (256 bits).
  */
-async function computePerceptualHash(file) {
+async function computePerceptualHash(file, options = {}) {
   const bitmap = await createImageBitmap(file);
   const canvas = new OffscreenCanvas(17, 16);
   const ctx = canvas.getContext('2d');
@@ -95,7 +95,19 @@ async function computePerceptualHash(file) {
     }
   }
 
-  return hash;
+  if (!options.debug) return hash;
+
+  // Debug path: paint grayscale pixels back onto the canvas and emit an
+  // object URL so the dev route can show exactly what the hash "sees".
+  for (let i = 0; i < 272; i++) {
+    const offset = i * 4;
+    pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = gray[i];
+    pixels[offset + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  const blob = await canvas.convertToBlob();
+  const debugUrl = URL.createObjectURL(blob);
+  return { hash, debugUrl };
 }
 
 /**
@@ -179,6 +191,11 @@ export async function dedupStage(photos, options = {}, onProgress) {
     DEFAULT_STAGE_CONCURRENCY,
     async ({ photo }) => {
       try {
+        if (options.debug) {
+          const { hash, debugUrl } = await computePerceptualHash(photo.file, { debug: true });
+          photo._dHashThumbnailUrl = debugUrl;
+          return hash;
+        }
         return await computePerceptualHash(photo.file);
       } catch {
         // HEIC on unsupported browser, etc. — keep the photo; null hash

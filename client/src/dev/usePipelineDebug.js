@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { PHASES, runPhase1 } from '../lib/pipeline/orchestrator.js';
+import { dedupStage } from '../lib/pipeline/stages/dedup.js';
 
 export const STAGE_ORDER = [
   'exif', 'dedup', 'cluster', 'heroSelect', 'chapterBuilder', 'thumbnail', 'qualityScore',
@@ -80,6 +81,9 @@ export function usePipelineDebug() {
         },
         onStageStart,
         onStageComplete,
+        stages: {
+          dedup: (photos, _opts, prog) => dedupStage(photos, { debug: true }, prog),
+        },
       });
     } catch (err) {
       setError(err);
@@ -125,6 +129,7 @@ function extractSnapshot(name, output) {
           status: 'burst',
           score: p._hammingDistance ?? null,
           matchedRepId: repId,
+          dHashThumbnailUrl: p._dHashThumbnailUrl ?? null,
         };
         if (repId) {
           if (!candidatesByRep[repId]) candidatesByRep[repId] = [];
@@ -139,6 +144,7 @@ function extractSnapshot(name, output) {
           status: 'kept',
           score: p._nearestDistance ?? null,
           candidates: candidatesByRep[p.id] ?? null,
+          dHashThumbnailUrl: p._dHashThumbnailUrl ?? null,
         };
       }
       return {

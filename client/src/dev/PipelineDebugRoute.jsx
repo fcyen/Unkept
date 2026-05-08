@@ -486,6 +486,17 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             <img src={imgUrl} alt="" className="w-full h-full object-cover" />
           </div>
         )}
+        {stage === 'dedup' && dedupSnap?.dHashThumbnailUrl && (
+          <div className="shrink-0 w-36 h-36 flex flex-col items-center justify-center bg-faint/40">
+            <img
+              src={dedupSnap.dHashThumbnailUrl}
+              alt="dHash input (17×16 grayscale)"
+              className="w-32 h-32 object-cover"
+              style={{ imageRendering: 'pixelated' }}
+            />
+            <p className="text-[10px] font-mono text-muted mt-1">17×16 grayscale</p>
+          </div>
+        )}
         <div className="flex-1 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-0.5 content-start">
           {rows.map(([label, value]) => (
             <div key={label} className="flex gap-2 col-span-1">
@@ -502,12 +513,23 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             {dedupPairs.items.map(({ id, dist }) => {
               const pairThumb = snapshots.thumbnail?.perPhoto?.[id]?.thumbnailUrl ?? getPreviewUrl(id);
               const pairName = snapshots.exif?.perPhoto?.[id]?.name ?? id;
+              const pairDHash = snapshots.dedup?.perPhoto?.[id]?.dHashThumbnailUrl;
               return (
                 <div key={id} className="shrink-0 w-24">
-                  {pairThumb ? (
-                    <img src={pairThumb} alt="" className="w-24 h-24 object-cover rounded border border-faint" />
-                  ) : (
-                    <div className="w-24 h-24 rounded border border-faint bg-faint" />
+                  <div className="flex gap-1">
+                    {pairThumb ? (
+                      <img src={pairThumb} alt="" className="w-24 h-24 object-cover rounded border border-faint" />
+                    ) : (
+                      <div className="w-24 h-24 rounded border border-faint bg-faint" />
+                    )}
+                  </div>
+                  {pairDHash && (
+                    <img
+                      src={pairDHash}
+                      alt=""
+                      className="w-24 h-24 object-cover rounded border border-faint mt-1"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
                   )}
                   <p className="text-[10px] font-mono text-ink truncate mt-1">{pairName}</p>
                   <p className="text-[10px] font-mono text-muted">d={dist ?? '?'}</p>
