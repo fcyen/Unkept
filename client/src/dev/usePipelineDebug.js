@@ -138,7 +138,7 @@ function extractSnapshot(name, output) {
           status: 'burst',
           score: p._hammingDistance ?? null,
           matchedRepId: repId,
-          dHashThumbnailUrl: p._dHashThumbnailUrl ?? null,
+          pHashThumbnailUrl: p._pHashThumbnailUrl ?? null,
         };
         if (repId) {
           if (!candidatesByRep[repId]) candidatesByRep[repId] = [];
@@ -153,7 +153,7 @@ function extractSnapshot(name, output) {
           status: 'kept',
           score: p._nearestDistance ?? null,
           candidates: candidatesByRep[p.id] ?? null,
-          dHashThumbnailUrl: p._dHashThumbnailUrl ?? null,
+          pHashThumbnailUrl: p._pHashThumbnailUrl ?? null,
         };
       }
       return {

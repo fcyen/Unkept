@@ -32,10 +32,10 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Nominatim for geocoding (Part 2 only — it's a network call)
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
-- Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
+- Dedup pass 2 uses pHash (DCT-based): resize to 32×32 grayscale → 2D DCT → top-left 8×8 frequency coefficients → bit = coefficient > mean of the 63 AC coefficients (DC skipped to avoid brightness bias). Windowed against the last 5 kept reps in filename order. Algorithm history: aHash/dHash were too sensitive (d=40+ on real bursts due to JPEG noise in flat regions); block-mean hash produced false positives for photos with similar brightness layout but different subjects (issue #16); pHash captures structural frequency components and distinguishes scenes even when average brightness is similar.
 
 ## Dev tooling
-- `/pipeline` route renders per-stage debug snapshots. The dedup stage in particular surfaces hamming distances on every card and shows the 8×8 block-mean tile that the hash actually sees, side-by-side with the original thumbnail. When tuning a perceptual stage, work from this view rather than guessing.
+- `/pipeline` route renders per-stage debug snapshots. The dedup stage surfaces hamming distances on every card and shows the 8×8 pHash DCT coefficient grid side-by-side with the original thumbnail. When tuning a perceptual stage, work from this view rather than guessing.
 
 ## Learning intent
 This project has two learning goals: AI-powered application development, and slideshow/motion design.

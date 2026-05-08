@@ -8,18 +8,28 @@
  * Two-pass deduplication:
  * 1. Exact hash: first 64KB + last 64KB + file size (no image decoding needed)
  *    Exact duplicates are dropped entirely — they have no frame variation.
- * 2. Perceptual hash: 32x32 grayscale, averaged into an 8x8 grid of 4x4 blocks,
- *    then a 64-bit block-mean hash (bit i = block[i].mean > median). Hamming
- *    distance comparison. The 4x4 averaging is what makes this robust to
- *    JPEG compression noise and small subject shifts — single-pixel hashes
- *    (aHash, dHash) failed because flat regions like sky/wall flipped bits
- *    freely between burst frames.
+ * 2. Perceptual hash (pHash, DCT-based): resize to 32×32 grayscale, compute
+ *    the 2D DCT, take the top-left 8×8 = 64 frequency coefficients, compare
+ *    each to the mean of the AC coefficients (skip DC at [0,0]). Bit i is 1
+ *    iff coefficient[i] > acMean. DCT captures structural frequency layout —
+ *    photos of the same scene differ only in high-frequency detail, so their
+ *    top-left DCT coefficients are very close. Visually-different scenes
+ *    diverge even when they share similar average brightness, which is what
+ *    made the previous block-mean hash produce false positives (issue #16).
  *    Near-duplicates become burst candidates — preserved for live-photo
  *    rendering in PR 2F but not shown as individual photos in the story.
  *    Pass 2 sorts by filename and only compares each photo against the last
  *    PERCEPTUAL_WINDOW kept reps — bursts are temporally local and cameras
  *    name files monotonically, so a global compare is unnecessary and would
  *    collapse unrelated repeat-subject shots.
+ *
+ * Algorithm history:
+ *   aHash / dHash (single-pixel comparison) → too sensitive; d=40-99 on real
+ *     bursts because flat regions (sky, wall) flip bits under JPEG noise.
+ *   64-bit block-mean hash → too coarse; photos with similar overall brightness
+ *     layout collapsed even when subjects differed (false positives, issue #16).
+ *   pHash (DCT) → captures structural frequency components; robust to noise
+ *     and discriminative across different scenes.
  *
  * Blob URLs for rejected duplicates are revoked immediately.
  */
@@ -29,6 +39,49 @@ import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 const CHUNK_SIZE = 65536; // 64KB
 const DEFAULT_HAMMING_THRESHOLD = 10; // out of 64 bits
 const PERCEPTUAL_WINDOW = 5;
+
+// DCT parameters: 32×32 input, 8×8 top-left coefficients needed.
+const DCT_N = 32;
+const DCT_K = 8;
+
+// Precompute cosine table at module load: cosTbl[k][n] = cos(π·k·(2n+1) / (2·N))
+const _cosTbl = Array.from({ length: DCT_K }, (_, k) =>
+  Float32Array.from({ length: DCT_N }, (_, n) =>
+    Math.cos((Math.PI * k * (2 * n + 1)) / (2 * DCT_N)),
+  ),
+);
+
+/**
+ * Separable 2D unnormalized DCT-II, computing only the top-left DCT_K×DCT_K
+ * coefficients of a DCT_N×DCT_N grayscale image. Normalization factors cancel
+ * out because the hash compares coefficients to their own mean.
+ * gray: Uint8Array of DCT_N*DCT_N values, row-major.
+ * Returns Float32Array of DCT_K*DCT_K = 64 values.
+ */
+function _topLeftDCT(gray) {
+  // 1D DCT along x for each row, keeping only DCT_K frequency bins.
+  const mid = new Float32Array(DCT_K * DCT_N);
+  for (let u = 0; u < DCT_K; u++) {
+    const cu = _cosTbl[u];
+    for (let y = 0; y < DCT_N; y++) {
+      let s = 0;
+      const row = y * DCT_N;
+      for (let x = 0; x < DCT_N; x++) s += gray[row + x] * cu[x];
+      mid[u * DCT_N + y] = s;
+    }
+  }
+  // 1D DCT along y for each column of mid, keeping only DCT_K frequency bins.
+  const out = new Float32Array(DCT_K * DCT_K);
+  for (let v = 0; v < DCT_K; v++) {
+    const cv = _cosTbl[v];
+    for (let u = 0; u < DCT_K; u++) {
+      let s = 0;
+      for (let y = 0; y < DCT_N; y++) s += mid[u * DCT_N + y] * cv[y];
+      out[v * DCT_K + u] = s;
+    }
+  }
+  return out;
+}
 
 /**
  * Read first and last 64KB of a file, combined with file size, to produce
@@ -61,70 +114,75 @@ async function computeExactHash(file) {
 }
 
 /**
- * Compute a block-mean perceptual fingerprint.
- * Resizes image to 32x32 grayscale, then averages into an 8x8 grid of
- * 4x4 blocks. Hash bit i is 1 iff block[i].mean > median across all 64
- * blocks. The 4x4 averaging is the whole point: single-pixel hashes
- * (aHash, dHash) have most of their bits living in flat regions (sky,
- * wall, skin) where adjacent pixels differ by a couple grayscale units
- * and JPEG compression noise flips comparisons freely between burst
- * frames. Averaging eats that noise.
+ * Compute a pHash (DCT-based) perceptual fingerprint.
+ * Resizes image to 32×32 grayscale, computes the 2D DCT, takes the top-left
+ * 8×8 = 64 frequency coefficients, then sets hash bit i = 1 iff coefficient[i]
+ * exceeds the mean of the 63 AC coefficients (skipping DC at index 0, which
+ * encodes average brightness and would bias the mean).
+ *
+ * The DCT captures structural frequency layout. Burst photos — same scene,
+ * minor subject/camera movement — share nearly identical low-frequency
+ * components and produce low Hamming distance. Photos of different scenes
+ * diverge even when their overall brightness is similar, which is the failure
+ * mode block-mean hash had (issue #16).
  *
  * Returns a Uint8Array of 8 bytes (64 bits).
  */
 async function computePerceptualHash(file, options = {}) {
   const bitmap = await createImageBitmap(file);
-  const canvas = new OffscreenCanvas(32, 32);
+  const canvas = new OffscreenCanvas(DCT_N, DCT_N);
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, 32, 32);
+  ctx.drawImage(bitmap, 0, 0, DCT_N, DCT_N);
   bitmap.close();
 
-  const imageData = ctx.getImageData(0, 0, 32, 32);
+  const imageData = ctx.getImageData(0, 0, DCT_N, DCT_N);
   const pixels = imageData.data;
 
-  // Convert to grayscale (32 * 32 = 1024 pixels)
-  const gray = new Uint8Array(1024);
-  for (let i = 0; i < 1024; i++) {
-    const offset = i * 4;
-    gray[i] = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
+  // Convert to grayscale (DCT_N * DCT_N = 1024 pixels)
+  const gray = new Uint8Array(DCT_N * DCT_N);
+  for (let i = 0; i < gray.length; i++) {
+    const o = i * 4;
+    gray[i] = Math.round(0.299 * pixels[o] + 0.587 * pixels[o + 1] + 0.114 * pixels[o + 2]);
   }
 
-  // 8x8 = 64 block means, each over a 4x4 patch.
-  const blockMeans = new Float32Array(64);
-  for (let by = 0; by < 8; by++) {
-    for (let bx = 0; bx < 8; bx++) {
-      let sum = 0;
-      for (let dy = 0; dy < 4; dy++) {
-        for (let dx = 0; dx < 4; dx++) {
-          sum += gray[(by * 4 + dy) * 32 + (bx * 4 + dx)];
-        }
-      }
-      blockMeans[by * 8 + bx] = sum / 16;
-    }
-  }
+  const dct = _topLeftDCT(gray); // Float32Array of 64 values
 
-  // Median (average of 32nd and 33rd sorted values for an even count).
-  const sorted = [...blockMeans].sort((a, b) => a - b);
-  const median = (sorted[31] + sorted[32]) / 2;
+  // pHash: compare each coefficient to the mean of the 63 AC coefficients.
+  // DC (index 0) encodes average brightness; excluding it from the mean
+  // prevents exposure differences from biasing comparisons.
+  let acSum = 0;
+  for (let i = 1; i < 64; i++) acSum += dct[i];
+  const acMean = acSum / 63;
 
-  // 64-bit hash, packed into 8 bytes.
   const hash = new Uint8Array(8);
   for (let i = 0; i < 64; i++) {
-    if (blockMeans[i] > median) {
-      hash[i >> 3] |= (1 << (i & 7));
+    if ((i === 0 ? dct[0] > 0 : dct[i] > acMean)) {
+      hash[i >> 3] |= 1 << (i & 7);
     }
   }
 
   if (!options.debug) return hash;
 
-  // Debug path: paint each 4x4 block as a flat patch of its mean value, so
-  // the dev route shows exactly what the hash "sees".
-  for (let by = 0; by < 8; by++) {
-    for (let bx = 0; bx < 8; bx++) {
-      const m = Math.round(blockMeans[by * 8 + bx]);
+  // Debug path: render the 8×8 DCT coefficient grid as a pixelated 32×32 image
+  // (each coefficient occupies a 4×4 block). AC coefficients are normalized
+  // around 128; DC is shown as neutral gray so it doesn't dominate the display.
+  let absMax = 0;
+  for (let i = 1; i < 64; i++) {
+    const a = Math.abs(dct[i]);
+    if (a > absMax) absMax = a;
+  }
+  if (absMax === 0) absMax = 1;
+
+  for (let v = 0; v < DCT_K; v++) {
+    for (let u = 0; u < DCT_K; u++) {
+      const coeff = dct[v * DCT_K + u];
+      const m =
+        u === 0 && v === 0
+          ? 128
+          : Math.max(0, Math.min(255, Math.round(128 + 127 * (coeff / absMax))));
       for (let dy = 0; dy < 4; dy++) {
         for (let dx = 0; dx < 4; dx++) {
-          const idx = ((by * 4 + dy) * 32 + (bx * 4 + dx)) * 4;
+          const idx = ((v * 4 + dy) * DCT_N + (u * 4 + dx)) * 4;
           pixels[idx] = pixels[idx + 1] = pixels[idx + 2] = m;
           pixels[idx + 3] = 255;
         }
@@ -221,7 +279,7 @@ export async function dedupStage(photos, options = {}, onProgress) {
       try {
         if (options.debug) {
           const { hash, debugUrl } = await computePerceptualHash(photo.file, { debug: true });
-          photo._dHashThumbnailUrl = debugUrl;
+          photo._pHashThumbnailUrl = debugUrl;
           return hash;
         }
         return await computePerceptualHash(photo.file);

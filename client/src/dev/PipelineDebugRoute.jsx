@@ -494,15 +494,15 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             <img src={imgUrl} alt="" className="w-full h-full object-cover" />
           </div>
         )}
-        {stage === 'dedup' && dedupSnap?.dHashThumbnailUrl && (
+        {stage === 'dedup' && dedupSnap?.pHashThumbnailUrl && (
           <div className="shrink-0 w-36 h-36 flex flex-col items-center justify-center bg-faint/40">
             <img
-              src={dedupSnap.dHashThumbnailUrl}
-              alt="dHash input (17×16 grayscale)"
+              src={dedupSnap.pHashThumbnailUrl}
+              alt="pHash DCT coefficients (8×8)"
               className="w-32 h-32 object-cover"
               style={{ imageRendering: 'pixelated' }}
             />
-            <p className="text-[10px] font-mono text-muted mt-1">17×16 grayscale</p>
+            <p className="text-[10px] font-mono text-muted mt-1">pHash DCT 8×8</p>
           </div>
         )}
         <div className="flex-1 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-0.5 content-start">
@@ -521,7 +521,7 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             {dedupPairs.items.map(({ id, dist }) => {
               const pairThumb = snapshots.thumbnail?.perPhoto?.[id]?.thumbnailUrl ?? getPreviewUrl(id);
               const pairName = snapshots.exif?.perPhoto?.[id]?.name ?? id;
-              const pairDHash = snapshots.dedup?.perPhoto?.[id]?.dHashThumbnailUrl;
+              const pairDHash = snapshots.dedup?.perPhoto?.[id]?.pHashThumbnailUrl;
               return (
                 <div key={id} className="shrink-0 w-24">
                   <div className="flex gap-1">
