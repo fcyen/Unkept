@@ -77,21 +77,20 @@ describe('dedupStage (logic)', () => {
 
   it('keeps photos outside hamming threshold', () => {
     // When perceptual hashes differ by more than the threshold,
-    // photos are kept. The threshold defaults to 5.
-    const a = new Uint8Array(32).fill(0);
-    const b = new Uint8Array(32).fill(0);
-    b[0] = 0b00111111; // 6 bits different
-    expect(hammingDistance(a, b)).toBe(6);
-    // With threshold 5, these would be considered different photos (kept)
-    expect(hammingDistance(a, b)).toBeGreaterThan(5);
+    // photos are kept. The threshold defaults to 10 (out of 64 bits).
+    const a = new Uint8Array(8).fill(0);
+    const b = new Uint8Array(8).fill(0);
+    b[0] = 0b11111111;
+    b[1] = 0b00001111; // 12 bits different
+    expect(hammingDistance(a, b)).toBe(12);
+    expect(hammingDistance(a, b)).toBeGreaterThan(10);
   });
 
   it('removes near-duplicates within hamming threshold', () => {
-    const a = new Uint8Array(32).fill(0);
-    const b = new Uint8Array(32).fill(0);
-    b[0] = 0b00000111; // 3 bits different
-    expect(hammingDistance(a, b)).toBe(3);
-    // With threshold 5, these would be considered duplicates (removed)
-    expect(hammingDistance(a, b)).toBeLessThanOrEqual(5);
+    const a = new Uint8Array(8).fill(0);
+    const b = new Uint8Array(8).fill(0);
+    b[0] = 0b00111111; // 6 bits different
+    expect(hammingDistance(a, b)).toBe(6);
+    expect(hammingDistance(a, b)).toBeLessThanOrEqual(10);
   });
 });

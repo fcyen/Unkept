@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { PHASES, runPhase1 } from '../lib/pipeline/orchestrator.js';
+import { dedupStage } from '../lib/pipeline/stages/dedup.js';
 
 export const STAGE_ORDER = [
   'exif', 'dedup', 'cluster', 'heroSelect', 'chapterBuilder', 'thumbnail', 'qualityScore',
@@ -89,6 +90,9 @@ export function usePipelineDebug() {
         },
         onStageStart,
         onStageComplete,
+        stages: {
+          dedup: (photos, _opts, prog) => dedupStage(photos, { debug: true }, prog),
+        },
       });
     } catch (err) {
       setError(err);
@@ -127,14 +131,30 @@ function extractSnapshot(name, output) {
 
     case 'dedup': {
       const perPhoto = {};
+      const candidatesByRep = {};
+      for (const p of output.burstCandidates) {
+        const repId = p._matchedRepId ?? null;
+        perPhoto[p.id] = {
+          status: 'burst',
+          score: p._hammingDistance ?? null,
+          matchedRepId: repId,
+          dHashThumbnailUrl: p._dHashThumbnailUrl ?? null,
+        };
+        if (repId) {
+          if (!candidatesByRep[repId]) candidatesByRep[repId] = [];
+          candidatesByRep[repId].push({ id: p.id, dist: p._hammingDistance ?? null });
+        }
+      }
       for (const p of (output.rejectedExact ?? [])) {
         perPhoto[p.id] = { status: 'exact', score: null };
       }
       for (const p of output.photos) {
-        perPhoto[p.id] = { status: 'kept', score: null };
-      }
-      for (const p of output.burstCandidates) {
-        perPhoto[p.id] = { status: 'burst', score: p._hammingDistance ?? null };
+        perPhoto[p.id] = {
+          status: 'kept',
+          score: p._nearestDistance ?? null,
+          candidates: candidatesByRep[p.id] ?? null,
+          dHashThumbnailUrl: p._dHashThumbnailUrl ?? null,
+        };
       }
       return {
         keptCount: output.photos.length,
