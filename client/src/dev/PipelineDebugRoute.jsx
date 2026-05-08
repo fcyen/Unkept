@@ -351,7 +351,7 @@ function getNumericScore(id, stage, snapshots) {
     case 'dedup':
       if (p.status === 'kept')  return 1;
       if (p.status === 'exact') return 0;
-      if (p.status === 'burst') return p.score != null ? Math.max(0, 1 - p.score / 10) : 0.5;
+      if (p.status === 'burst') return p.score != null ? Math.max(0, 1 - p.score / 20) : 0.5;
       return null;
     case 'heroSelect':
       return p.isHero ? 1 : 0;
@@ -579,7 +579,7 @@ function getAnnotation(photoId, stage, snapshots) {
       if (p.status === 'burst') {
         return {
           label: 'burst',
-          color: scoreToColor(p.score != null ? Math.max(0, 1 - p.score / 10) : 0.5),
+          color: scoreToColor(p.score != null ? Math.max(0, 1 - p.score / 20) : 0.5),
           overlay: distOverlay,
         };
       }

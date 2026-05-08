@@ -8,7 +8,12 @@
  * Two-pass deduplication:
  * 1. Exact hash: first 64KB + last 64KB + file size (no image decoding needed)
  *    Exact duplicates are dropped entirely — they have no frame variation.
- * 2. Perceptual hash: 16px grayscale average hash, hamming distance comparison
+ * 2. Perceptual hash: 32x32 grayscale, averaged into an 8x8 grid of 4x4 blocks,
+ *    then a 64-bit block-mean hash (bit i = block[i].mean > median). Hamming
+ *    distance comparison. The 4x4 averaging is what makes this robust to
+ *    JPEG compression noise and small subject shifts — single-pixel hashes
+ *    (aHash, dHash) failed because flat regions like sky/wall flipped bits
+ *    freely between burst frames.
  *    Near-duplicates become burst candidates — preserved for live-photo
  *    rendering in PR 2F but not shown as individual photos in the story.
  *    Pass 2 sorts by filename and only compares each photo against the last
@@ -22,7 +27,7 @@
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const CHUNK_SIZE = 65536; // 64KB
-const DEFAULT_HAMMING_THRESHOLD = 5;
+const DEFAULT_HAMMING_THRESHOLD = 10; // out of 64 bits
 const PERCEPTUAL_WINDOW = 5;
 
 /**
@@ -56,53 +61,75 @@ async function computeExactHash(file) {
 }
 
 /**
- * Compute a difference-hash (dHash) perceptual fingerprint.
- * Resizes image to 17x16 grayscale, then for each row emits 16 bits where
- * bit i is 1 iff pixel[i] > pixel[i+1]. dHash captures horizontal gradients
- * and is more discriminative than aHash for "same scene, different subject"
- * cases, since two photos of the same room have similar overall brightness
- * (high aHash collision) but different edge structure.
+ * Compute a block-mean perceptual fingerprint.
+ * Resizes image to 32x32 grayscale, then averages into an 8x8 grid of
+ * 4x4 blocks. Hash bit i is 1 iff block[i].mean > median across all 64
+ * blocks. The 4x4 averaging is the whole point: single-pixel hashes
+ * (aHash, dHash) have most of their bits living in flat regions (sky,
+ * wall, skin) where adjacent pixels differ by a couple grayscale units
+ * and JPEG compression noise flips comparisons freely between burst
+ * frames. Averaging eats that noise.
  *
- * Returns a Uint8Array of 32 bytes (256 bits).
+ * Returns a Uint8Array of 8 bytes (64 bits).
  */
 async function computePerceptualHash(file, options = {}) {
   const bitmap = await createImageBitmap(file);
-  const canvas = new OffscreenCanvas(17, 16);
+  const canvas = new OffscreenCanvas(32, 32);
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, 17, 16);
+  ctx.drawImage(bitmap, 0, 0, 32, 32);
   bitmap.close();
 
-  const imageData = ctx.getImageData(0, 0, 17, 16);
+  const imageData = ctx.getImageData(0, 0, 32, 32);
   const pixels = imageData.data;
 
-  // Convert to grayscale values (17 * 16 = 272 pixels)
-  const gray = new Uint8Array(272);
-  for (let i = 0; i < 272; i++) {
+  // Convert to grayscale (32 * 32 = 1024 pixels)
+  const gray = new Uint8Array(1024);
+  for (let i = 0; i < 1024; i++) {
     const offset = i * 4;
     gray[i] = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
   }
 
-  // Generate hash: 16 bits per row, bit i is 1 iff pixel[i] > pixel[i+1].
-  // 16 rows * 16 bits = 256 bits.
-  const hash = new Uint8Array(32);
-  for (let row = 0; row < 16; row++) {
-    const rowStart = row * 17;
-    for (let col = 0; col < 16; col++) {
-      if (gray[rowStart + col] > gray[rowStart + col + 1]) {
-        const bitIdx = row * 16 + col;
-        hash[bitIdx >> 3] |= (1 << (bitIdx & 7));
+  // 8x8 = 64 block means, each over a 4x4 patch.
+  const blockMeans = new Float32Array(64);
+  for (let by = 0; by < 8; by++) {
+    for (let bx = 0; bx < 8; bx++) {
+      let sum = 0;
+      for (let dy = 0; dy < 4; dy++) {
+        for (let dx = 0; dx < 4; dx++) {
+          sum += gray[(by * 4 + dy) * 32 + (bx * 4 + dx)];
+        }
       }
+      blockMeans[by * 8 + bx] = sum / 16;
+    }
+  }
+
+  // Median (average of 32nd and 33rd sorted values for an even count).
+  const sorted = [...blockMeans].sort((a, b) => a - b);
+  const median = (sorted[31] + sorted[32]) / 2;
+
+  // 64-bit hash, packed into 8 bytes.
+  const hash = new Uint8Array(8);
+  for (let i = 0; i < 64; i++) {
+    if (blockMeans[i] > median) {
+      hash[i >> 3] |= (1 << (i & 7));
     }
   }
 
   if (!options.debug) return hash;
 
-  // Debug path: paint grayscale pixels back onto the canvas and emit an
-  // object URL so the dev route can show exactly what the hash "sees".
-  for (let i = 0; i < 272; i++) {
-    const offset = i * 4;
-    pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = gray[i];
-    pixels[offset + 3] = 255;
+  // Debug path: paint each 4x4 block as a flat patch of its mean value, so
+  // the dev route shows exactly what the hash "sees".
+  for (let by = 0; by < 8; by++) {
+    for (let bx = 0; bx < 8; bx++) {
+      const m = Math.round(blockMeans[by * 8 + bx]);
+      for (let dy = 0; dy < 4; dy++) {
+        for (let dx = 0; dx < 4; dx++) {
+          const idx = ((by * 4 + dy) * 32 + (bx * 4 + dx)) * 4;
+          pixels[idx] = pixels[idx + 1] = pixels[idx + 2] = m;
+          pixels[idx + 3] = 255;
+        }
+      }
+    }
   }
   ctx.putImageData(imageData, 0, 0);
   const blob = await canvas.convertToBlob();
@@ -111,11 +138,12 @@ async function computePerceptualHash(file, options = {}) {
 }
 
 /**
- * Compute hamming distance between two 32-byte hash arrays.
+ * Compute hamming distance between two equal-length hash arrays.
  */
 function hammingDistance(a, b) {
   let dist = 0;
-  for (let i = 0; i < 32; i++) {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
     let xor = a[i] ^ b[i];
     while (xor) {
       dist += xor & 1;
