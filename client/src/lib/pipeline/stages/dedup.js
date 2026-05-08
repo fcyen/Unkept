@@ -209,23 +209,28 @@ export async function dedupStage(photos, options = {}, onProgress) {
     }
 
     let matchedRepIdx = -1;
-    let matchedDist = -1;
+    let bestDist = Infinity;
+    let bestIdx = -1;
     const windowStart = Math.max(0, keptHashes.length - PERCEPTUAL_WINDOW);
     for (let j = keptHashes.length - 1; j >= windowStart; j--) {
       if (keptHashes[j] === null) continue;
       const dist = hammingDistance(pHash, keptHashes[j]);
-      if (dist <= threshold) {
-        matchedRepIdx = j;
-        matchedDist = dist;
-        break;
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = j;
       }
+    }
+    if (bestIdx !== -1 && bestDist <= threshold) {
+      matchedRepIdx = bestIdx;
     }
 
     if (matchedRepIdx === -1) {
+      // Record nearest miss for debug visibility, even when no match.
+      if (bestIdx !== -1) photo._nearestDistance = bestDist;
       keptEntries.push({ photo, originalIdx });
       keptHashes.push(pHash);
     } else {
-      photo._hammingDistance = matchedDist;
+      photo._hammingDistance = bestDist;
       photo._matchedRepId = keptEntries[matchedRepIdx].photo.id;
       burstCandidates.push(photo);
       const repId = keptEntries[matchedRepIdx].photo.id;

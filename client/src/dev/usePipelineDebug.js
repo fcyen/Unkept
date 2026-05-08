@@ -137,7 +137,7 @@ function extractSnapshot(name, output) {
       for (const p of output.photos) {
         perPhoto[p.id] = {
           status: 'kept',
-          score: null,
+          score: p._nearestDistance ?? null,
           candidates: candidatesByRep[p.id] ?? null,
         };
       }

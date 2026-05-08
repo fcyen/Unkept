@@ -415,6 +415,11 @@ function PhotoCard({ photoId, stage, snapshots, getPreviewUrl, isSelected, onSel
 
       {annotation && (
         <div className="absolute bottom-0 inset-x-0">
+          {annotation.overlay && (
+            <div className="px-1.5 py-0.5 text-white text-xs font-mono leading-tight truncate bg-black/60">
+              {annotation.overlay}
+            </div>
+          )}
           <div
             className="px-1.5 py-0.5 text-white text-xs font-mono leading-tight truncate"
             style={{ backgroundColor: annotation.color + 'dd' }}
@@ -449,16 +454,6 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
     ['Dimensions', exif.width && exif.height ? `${exif.width} × ${exif.height}` : null],
     ['Orientation', exif.orientation != null ? String(exif.orientation) : null],
   ].filter(([, v]) => v != null);
-
-  // Stage scores across all completed stages for this photo
-  const stageScores = STAGE_ORDER
-    .filter((s) => snapshots[s])
-    .map((s) => {
-      const p = snapshots[s]?.perPhoto?.[photoId];
-      if (!p) return { stage: s, label: 'removed' };
-      const ann = getAnnotation(photoId, s, snapshots);
-      return { stage: s, label: ann?.label ?? '—', color: ann?.color ?? '#9ca3af' };
-    });
 
   // Dedup pair view: when inspecting a burst photo, show its matched rep;
   // when inspecting a kept rep that absorbed candidates, show them.
@@ -496,20 +491,6 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             <div key={label} className="flex gap-2 col-span-1">
               <dt className="text-xs text-muted shrink-0 w-20">{label}</dt>
               <dd className="text-xs font-mono text-ink truncate">{value}</dd>
-            </div>
-          ))}
-        </div>
-        <div className="shrink-0 px-4 py-3 space-y-1">
-          <p className="text-xs text-muted uppercase tracking-wide mb-2">Stage scores</p>
-          {stageScores.map(({ stage: s, label, color }) => (
-            <div key={s} className="flex items-center gap-2">
-              <span className="text-xs text-muted w-16 shrink-0">{STAGE_LABELS[s]}</span>
-              <span
-                className="text-xs font-mono px-1.5 py-0.5 rounded text-white"
-                style={{ backgroundColor: color + 'dd' }}
-              >
-                {label}
-              </span>
             </div>
           ))}
         </div>
@@ -570,13 +551,14 @@ function getAnnotation(photoId, stage, snapshots) {
 
     case 'dedup': {
       if (!p) return { label: 'n/a', color: '#9ca3af' };
-      if (p.status === 'kept')  return { label: 'kept',   color: scoreToColor(1) };
-      if (p.status === 'exact') return { label: 'exact',  color: scoreToColor(0) };
+      const distOverlay = p.score != null ? `d=${p.score}` : null;
+      if (p.status === 'kept')  return { label: 'kept',  color: scoreToColor(1), overlay: distOverlay };
+      if (p.status === 'exact') return { label: 'exact', color: scoreToColor(0), overlay: null };
       if (p.status === 'burst') {
-        const dist = p.score;
         return {
-          label: dist != null ? `burst d=${dist}` : 'burst',
-          color: scoreToColor(dist != null ? Math.max(0, 1 - dist / 10) : 0.5),
+          label: 'burst',
+          color: scoreToColor(p.score != null ? Math.max(0, 1 - p.score / 10) : 0.5),
+          overlay: distOverlay,
         };
       }
       return null;
