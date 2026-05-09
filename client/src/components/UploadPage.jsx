@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { usePipeline, PHASES } from '../lib/usePipeline.js';
 import { buildStory, applyGeocoding } from '../lib/storyBuilder.js';
 import { resolveSkeletonLocations } from '../lib/geocode.js';
+import { createStoryRunId, TELEMETRY_EVENTS, track } from '../lib/analytics.js';
+import { DEFAULT_STORY_INTENT, STORY_INTENTS } from '../lib/storyPreferences.js';
 
 // Each pipeline stage cycles through several phrasings while it runs, so
 // the button feels alive instead of stuck on a single sentence.
@@ -51,6 +53,8 @@ export default function UploadPage({ onStoryReady }) {
   const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
   const [geocodingProgress, setGeocodingProgress] = useState(null);
+  const [storyRunId, setStoryRunId] = useState(() => createStoryRunId());
+  const [storyIntent, setStoryIntent] = useState(DEFAULT_STORY_INTENT);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
 
@@ -113,6 +117,8 @@ export default function UploadPage({ onStoryReady }) {
     previews.forEach((url) => URL.revokeObjectURL(url));
     setPreviews([]);
     setPhotos([]);
+    setStoryRunId(createStoryRunId());
+    setStoryIntent(DEFAULT_STORY_INTENT);
   };
 
   const handlePhotoDrop = (e) => {
@@ -134,7 +140,19 @@ export default function UploadPage({ onStoryReady }) {
       return;
     }
     setError('');
-    pipeline.start(photos);
+    pipeline.start(photos, {
+      storyRunId,
+      preferences: { storyIntent },
+    });
+  };
+
+  const handleIntentSelect = (intent) => {
+    setStoryIntent(intent);
+    track(TELEMETRY_EVENTS.STORY_INTENT_SELECTED, {
+      storyRunId,
+      storyIntent: intent,
+      photoCount: photos.length,
+    });
   };
 
   return (
@@ -221,12 +239,56 @@ export default function UploadPage({ onStoryReady }) {
           </div>
         )}
 
+        {photos.length > 0 && !processing && (
+          <IntentPicker
+            selectedIntent={storyIntent}
+            onSelect={handleIntentSelect}
+          />
+        )}
+
         <ProgressButton
           processing={processing}
           pipeline={pipeline}
           geocodingProgress={geocodingProgress}
           onClick={handleGenerate}
         />
+      </div>
+    </div>
+  );
+}
+
+function IntentPicker({ selectedIntent, onSelect }) {
+  return (
+    <div className="mb-8">
+      <p className="font-sans text-[11px] text-muted tracking-[0.22em] uppercase mb-3">
+        What should Unkept look for?
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        {STORY_INTENTS.map((intent) => {
+          const selected = intent.id === selectedIntent;
+          return (
+            <button
+              key={intent.id}
+              type="button"
+              onClick={() => onSelect(intent.id)}
+              className={`text-left border px-3 py-3 transition-colors ${
+                selected
+                  ? 'border-ink bg-ink text-cream'
+                  : 'border-faint/50 bg-transparent text-ink hover:border-ink/30'
+              }`}
+              aria-pressed={selected}
+            >
+              <span className="block font-serif text-base leading-tight">
+                {intent.label}
+              </span>
+              <span className={`block font-sans text-[11px] leading-snug mt-1 ${
+                selected ? 'text-cream/70' : 'text-muted'
+              }`}>
+                {intent.description}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

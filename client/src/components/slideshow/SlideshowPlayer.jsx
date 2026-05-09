@@ -31,6 +31,8 @@ import CodaFrame from './CodaFrame.jsx';
 import ProgressBar from './ProgressBar.jsx';
 import MusicToggle from './MusicToggle.jsx';
 import { useSlideshowMusic } from './music/useSlideshowMusic.js';
+import { createStoryRunId, TELEMETRY_EVENTS, track } from '../../lib/analytics.js';
+import { DEFAULT_STORY_INTENT, normalizeStoryIntent } from '../../lib/storyPreferences.js';
 
 const FRAME_DURATION = {
   cover: null,
@@ -45,6 +47,12 @@ const EXIT_ANIM_MS = 400;
 export default function SlideshowPlayer({ story, onExit }) {
   const frames = story.frames;
   const photos = story.skeleton.photos;
+  const storyRunIdRef = useRef(story.skeleton.meta?.storyRunId || createStoryRunId());
+  const storyRunId = storyRunIdRef.current;
+  const storyIntent = normalizeStoryIntent(
+    story.skeleton.meta?.preferences?.storyIntent || DEFAULT_STORY_INTENT,
+  );
+  const photoCount = story.skeleton.meta?.totalPhotosInput ?? Object.keys(photos).length;
 
   const [frameIndex, setFrameIndex] = useState(0);
   const [status, setStatus] = useState('idle');
@@ -61,8 +69,19 @@ export default function SlideshowPlayer({ story, onExit }) {
   const exitTimerRef = useRef(null);
   const holdTimerRef = useRef(null);
   const pointerRef = useRef(null);
+  const highestFrameIndexRef = useRef(0);
+  const completedTrackedRef = useRef(false);
+  const replayCountRef = useRef(0);
 
   const music = useSlideshowMusic();
+
+  const trackingPayload = useCallback((extra = {}) => ({
+    storyRunId,
+    storyIntent,
+    photoCount,
+    totalFrames: frames.length,
+    ...extra,
+  }), [frames.length, photoCount, storyIntent, storyRunId]);
 
   const clearAdvanceTimer = () => {
     if (advanceTimerRef.current) {
@@ -79,6 +98,7 @@ export default function SlideshowPlayer({ story, onExit }) {
   useEffect(() => {
     clearAdvanceTimer();
     setExiting(false);
+    highestFrameIndexRef.current = Math.max(highestFrameIndexRef.current, frameIndex);
 
     if (status !== 'playing' || duration == null) return;
 
@@ -99,6 +119,16 @@ export default function SlideshowPlayer({ story, onExit }) {
 
     return clearAdvanceTimer;
   }, [frameIndex, status, duration, isLastFrame, currentFrame?.type]);
+
+  useEffect(() => {
+    if (status !== 'finished' || completedTrackedRef.current) return;
+    completedTrackedRef.current = true;
+    highestFrameIndexRef.current = frames.length - 1;
+    track(TELEMETRY_EVENTS.STORY_COMPLETED, trackingPayload({
+      reachedFrameIndex: frames.length - 1,
+      completionRate: 1,
+    }));
+  }, [frames.length, status, trackingPayload]);
 
   const goNext = useCallback(() => {
     clearAdvanceTimer();
@@ -125,18 +155,36 @@ export default function SlideshowPlayer({ story, onExit }) {
     clearAdvanceTimer();
     setStatus('playing');
     setFrameIndex((i) => (i === 0 && frames.length > 1 ? 1 : i));
+    track(TELEMETRY_EVENTS.STORY_STARTED, trackingPayload());
     // Must run synchronously inside the user gesture to satisfy mobile
     // autoplay restrictions.
     music.start();
-  }, [frames.length, music]);
+  }, [frames.length, music, trackingPayload]);
 
   const replay = useCallback(() => {
     clearAdvanceTimer();
     setExiting(false);
+    replayCountRef.current += 1;
+    completedTrackedRef.current = false;
+    highestFrameIndexRef.current = 0;
     setFrameIndex(0);
     setStatus('idle');
+    track(TELEMETRY_EVENTS.STORY_REPLAYED, trackingPayload({
+      replayCount: replayCountRef.current,
+    }));
     // Music will fade in again from the next cover CTA tap.
-  }, []);
+  }, [trackingPayload]);
+
+  const handleExit = useCallback(() => {
+    if (status !== 'finished') {
+      const reachedFrameIndex = Math.max(highestFrameIndexRef.current, frameIndex);
+      track(TELEMETRY_EVENTS.STORY_EXITED, trackingPayload({
+        reachedFrameIndex,
+        completionRate: computeCompletionRate(reachedFrameIndex, frames.length),
+      }));
+    }
+    onExit?.();
+  }, [frameIndex, frames.length, onExit, status, trackingPayload]);
 
   // Begin the music fade-out as soon as the coda starts playing, so the
   // 2s fade lands before the 5s hold ends.
@@ -212,7 +260,7 @@ export default function SlideshowPlayer({ story, onExit }) {
       } else if (e.key === 'ArrowLeft') {
         goPrev();
       } else if (e.key === 'Escape') {
-        onExit?.();
+        handleExit();
       } else if (e.key === ' ') {
         if (status === 'playing') {
           setStatus('paused');
@@ -225,7 +273,7 @@ export default function SlideshowPlayer({ story, onExit }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goNext, goPrev, onExit, startPlayback, status]);
+  }, [goNext, goPrev, handleExit, startPlayback, status]);
 
   // --- Render -------------------------------------------------------------
 
@@ -298,7 +346,7 @@ export default function SlideshowPlayer({ story, onExit }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onExit();
+              handleExit();
             }}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
@@ -311,4 +359,9 @@ export default function SlideshowPlayer({ story, onExit }) {
       </div>
     </div>
   );
+}
+
+function computeCompletionRate(reachedFrameIndex, totalFrames) {
+  if (!totalFrames) return 0;
+  return Math.round(((reachedFrameIndex + 1) / totalFrames) * 1000) / 1000;
 }

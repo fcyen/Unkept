@@ -96,7 +96,7 @@ export async function runPipelineWithCheckpoints({ phases, initialInput, onProgr
  * Strips File references and produces the final serialisable JSON.
  *
  * @param {{ chapters: Chapter[], photos: Map<string, PhotoData>, burstGroups?: BurstGroup[] }} pipelineOutput
- * @param {{ totalPhotosInput: number, totalPhotosAfterDedup: number, surveyResponses?: object }} meta
+ * @param {{ totalPhotosInput: number, totalPhotosAfterDedup: number, storyRunId?: string, preferences?: object, surveyResponses?: object }} meta
  * @returns {object} Story Skeleton
  */
 export function assembleSkeleton(pipelineOutput, meta) {
@@ -149,6 +149,8 @@ export function assembleSkeleton(pipelineOutput, meta) {
       totalPhotosAfterDedup: meta.totalPhotosAfterDedup ?? photos.size,
       totalChapters: chapters.length,
       dateRange,
+      storyRunId: meta.storyRunId || null,
+      preferences: meta.preferences || {},
       surveyResponses: meta.surveyResponses || {},
     },
   };

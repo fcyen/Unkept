@@ -61,3 +61,13 @@ iOS "Heart" and Google Photos star status are stored in each platform's database
 - "Who should appear most?" — requires face detection, which is post-MVP
 
 **Post-MVP (PR 5A):** add free-text input ("the morning we hiked to the waterfall") interpreted by an LLM agent with tools to search chapters by date and location, returning structured selection weights. This is also the primary agent orchestration learning exercise.
+
+---
+
+## 5. Product Telemetry — CLOSED
+
+**Decision:** use PostHog for v1 product analytics, behind a small wrapper so we can migrate to owned telemetry later.
+
+**Events:** `story_intent_selected`, `story_started`, `story_completed`, `story_exited`, `story_replayed`.
+
+**Payload:** `storyRunId` (`run_<uuid>`), `storyIntent`, `photoCount`, and playback fields (`totalFrames`, `reachedFrameIndex`, `completionRate`, `replayCount`). Do not send filenames, dates, GPS, thumbnails, photo IDs, or skeletons.

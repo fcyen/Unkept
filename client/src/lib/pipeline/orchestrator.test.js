@@ -85,6 +85,38 @@ describe('runPhase1', () => {
     expect(skeleton.photos[photo.id].file).toBeUndefined();
   });
 
+  it('stores story run and preference metadata on the skeleton', async () => {
+    const photo = basicPhoto();
+
+    const skeleton = await runPhase1([{}], {
+      storyConfig: {
+        storyRunId: 'run_test',
+        preferences: { storyIntent: 'cinematic' },
+      },
+      stages: {
+        exif: async () => [photo],
+        dedup: async () => ({ photos: [photo], burstGroups: [], burstCandidates: [] }),
+        cluster: async () => ({ clusters: [[photo]], burstGroups: [], burstCandidates: [] }),
+        heroSelect: async (input) => ({
+          clusters: input.clusters,
+          heroIds: new Set([photo.id]),
+          burstGroups: [],
+          burstCandidates: [],
+        }),
+        chapterBuilder: async () => ({
+          chapters: [{ id: 'chapter_001', photoIds: [photo.id], heroPhotoId: photo.id, date: '2025-03-15', coords: null }],
+          photos: new Map([[photo.id, photo]]),
+          burstGroups: [],
+        }),
+        thumbnail: async (input) => input,
+        qualityScore: async (input) => input,
+      },
+    });
+
+    expect(skeleton.meta.storyRunId).toBe('run_test');
+    expect(skeleton.meta.preferences).toEqual({ storyIntent: 'cinematic' });
+  });
+
   it('reports stage progress events', async () => {
     const photo = basicPhoto();
     const events = [];

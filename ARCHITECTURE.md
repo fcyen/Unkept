@@ -4,7 +4,7 @@
 
 Unkept is a privacy-first web app that turns a collection of photos into a Wrapped-style slideshow. EXIF extraction, deduplication, clustering, hero selection, chapter building, thumbnail generation, and blur scoring all run locally in the browser.
 
-**Photos never leave the user's device during processing.** Data only leaves on explicit user action (future: Share, Generate Captions). The output of Phase 1 is a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords). Phase 2 consumes the skeleton and renders the slideshow, enriched with geocoded location labels.
+**Photos never leave the user's device during processing.** Product telemetry may leave the device when configured, but it is limited to anonymous interaction events (story intent, photo count, frame count, completion/replay) and never includes filenames, dates, GPS, thumbnails, photo IDs, or skeletons. The output of Phase 1 is a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords). Phase 2 consumes the skeleton and renders the slideshow, enriched with geocoded location labels.
 
 Deployable as a static site.
 
@@ -239,6 +239,8 @@ Carried between stages. Has a live `file: File` reference until thumbnails are g
     totalPhotosAfterDedup: number,
     totalChapters: number,
     dateRange: { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } | null,
+    storyRunId: "run_<uuid>" | null,
+    preferences: { storyIntent: "balanced" | "people" | "placesAndFood" | "cinematic" },
     surveyResponses: {},                   // kept for shape stability;
                                            // always {} now that the
                                            // MVP survey is dropped
@@ -258,8 +260,11 @@ Produced by `storyBuilder.js`. Shape is captured in that module and the slidesho
 - EXIF extraction
 - Deduplication, clustering, hero selection, chapter building
 - Thumbnail generation + blur scoring
-- Geocoding (network, but to Nominatim directly — no server proxy)
 - All rendering
+
+### Optional external calls
+- Geocoding: Nominatim in Part 2, using rounded/deduped chapter coords.
+- Product telemetry: PostHog, when `VITE_POSTHOG_KEY` is configured. Events are `story_intent_selected`, `story_started`, `story_completed`, `story_exited`, and `story_replayed`.
 
 ### Server-side (Phase 3 stub, not in active dev)
 - Planned: Generate Captions, Share. Both would receive curated thumbnails (data URLs, ~20KB each) + metadata. Original full-res photos never leave the device.

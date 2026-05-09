@@ -31,6 +31,7 @@ export const PHASES = Object.freeze({
  * @param {(event: { stage: string, progress: number, total: number }) => void} [deps.onProgress]
  * @param {object} [deps.stages]
  *        override any of the stage functions — used only for testing
+ * @param {{ storyRunId?: string, preferences?: object }} [deps.storyConfig]
  * @returns {Promise<object>} Story Skeleton
  */
 export async function runPhase1(files, deps = {}) {
@@ -40,6 +41,7 @@ export async function runPhase1(files, deps = {}) {
     onStageStart = noop,
     onStageComplete = noop,
     stages: stageOverrides = {},
+    storyConfig = {},
   } = deps;
 
   const stages = {
@@ -116,6 +118,8 @@ export async function runPhase1(files, deps = {}) {
     {
       totalPhotosInput: files.length,
       totalPhotosAfterDedup: dedupResult.photos.length,
+      storyRunId: storyConfig.storyRunId,
+      preferences: storyConfig.preferences,
     },
   );
 

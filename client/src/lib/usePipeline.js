@@ -11,7 +11,7 @@ export function usePipeline() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
-  const start = useCallback(async (files) => {
+  const start = useCallback(async (files, storyConfig = {}) => {
     setPhase(PHASES.RUNNING);
     setProgress(null);
     setResult(null);
@@ -21,6 +21,7 @@ export function usePipeline() {
       const skeleton = await runPhase1(files, {
         onPhase: setPhase,
         onProgress: setProgress,
+        storyConfig,
       });
       setResult(skeleton);
     } catch (err) {
