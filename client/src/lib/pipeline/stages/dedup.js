@@ -8,9 +8,18 @@
  * Two-pass deduplication:
  * 1. Exact hash: first 64KB + last 64KB + file size (no image decoding needed)
  *    Exact duplicates are dropped entirely — they have no frame variation.
- * 2. Perceptual hash: 16px grayscale average hash, hamming distance comparison
+ * 2. Perceptual hash: 32x32 grayscale, averaged into an 8x8 grid of 4x4 blocks,
+ *    then a 64-bit block-mean hash (bit i = block[i].mean > median). Hamming
+ *    distance comparison. The 4x4 averaging is what makes this robust to
+ *    JPEG compression noise and small subject shifts — single-pixel hashes
+ *    (aHash, dHash) failed because flat regions like sky/wall flipped bits
+ *    freely between burst frames.
  *    Near-duplicates become burst candidates — preserved for live-photo
  *    rendering in PR 2F but not shown as individual photos in the story.
+ *    Pass 2 sorts by filename and only compares each photo against the last
+ *    PERCEPTUAL_WINDOW kept reps — bursts are temporally local and cameras
+ *    name files monotonically, so a global compare is unnecessary and would
+ *    collapse unrelated repeat-subject shots.
  *
  * Blob URLs for rejected duplicates are revoked immediately.
  */
@@ -18,7 +27,8 @@
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const CHUNK_SIZE = 65536; // 64KB
-const DEFAULT_HAMMING_THRESHOLD = 5;
+const DEFAULT_HAMMING_THRESHOLD = 10; // out of 64 bits
+const PERCEPTUAL_WINDOW = 5;
 
 /**
  * Read first and last 64KB of a file, combined with file size, to produce
@@ -51,51 +61,89 @@ async function computeExactHash(file) {
 }
 
 /**
- * Compute an average-hash (aHash) perceptual fingerprint.
- * Resizes image to 16x16 grayscale, then produces a 256-bit hash
- * based on whether each pixel is above or below the mean.
+ * Compute a block-mean perceptual fingerprint.
+ * Resizes image to 32x32 grayscale, then averages into an 8x8 grid of
+ * 4x4 blocks. Hash bit i is 1 iff block[i].mean > median across all 64
+ * blocks. The 4x4 averaging is the whole point: single-pixel hashes
+ * (aHash, dHash) have most of their bits living in flat regions (sky,
+ * wall, skin) where adjacent pixels differ by a couple grayscale units
+ * and JPEG compression noise flips comparisons freely between burst
+ * frames. Averaging eats that noise.
  *
- * Returns a Uint8Array of 32 bytes (256 bits).
+ * Returns a Uint8Array of 8 bytes (64 bits).
  */
-async function computePerceptualHash(file) {
+async function computePerceptualHash(file, options = {}) {
   const bitmap = await createImageBitmap(file);
-  const canvas = new OffscreenCanvas(16, 16);
+  const canvas = new OffscreenCanvas(32, 32);
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, 16, 16);
+  ctx.drawImage(bitmap, 0, 0, 32, 32);
   bitmap.close();
 
-  const imageData = ctx.getImageData(0, 0, 16, 16);
+  const imageData = ctx.getImageData(0, 0, 32, 32);
   const pixels = imageData.data;
 
-  // Convert to grayscale values
-  const gray = new Uint8Array(256);
-  let sum = 0;
-  for (let i = 0; i < 256; i++) {
+  // Convert to grayscale (32 * 32 = 1024 pixels)
+  const gray = new Uint8Array(1024);
+  for (let i = 0; i < 1024; i++) {
     const offset = i * 4;
-    const g = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
-    gray[i] = g;
-    sum += g;
+    gray[i] = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
   }
 
-  const mean = sum / 256;
-
-  // Generate hash: 1 bit per pixel, 1 if above mean
-  const hash = new Uint8Array(32);
-  for (let i = 0; i < 256; i++) {
-    if (gray[i] >= mean) {
-      hash[Math.floor(i / 8)] |= (1 << (i % 8));
+  // 8x8 = 64 block means, each over a 4x4 patch.
+  const blockMeans = new Float32Array(64);
+  for (let by = 0; by < 8; by++) {
+    for (let bx = 0; bx < 8; bx++) {
+      let sum = 0;
+      for (let dy = 0; dy < 4; dy++) {
+        for (let dx = 0; dx < 4; dx++) {
+          sum += gray[(by * 4 + dy) * 32 + (bx * 4 + dx)];
+        }
+      }
+      blockMeans[by * 8 + bx] = sum / 16;
     }
   }
 
-  return hash;
+  // Median (average of 32nd and 33rd sorted values for an even count).
+  const sorted = [...blockMeans].sort((a, b) => a - b);
+  const median = (sorted[31] + sorted[32]) / 2;
+
+  // 64-bit hash, packed into 8 bytes.
+  const hash = new Uint8Array(8);
+  for (let i = 0; i < 64; i++) {
+    if (blockMeans[i] > median) {
+      hash[i >> 3] |= (1 << (i & 7));
+    }
+  }
+
+  if (!options.debug) return hash;
+
+  // Debug path: paint each 4x4 block as a flat patch of its mean value, so
+  // the dev route shows exactly what the hash "sees".
+  for (let by = 0; by < 8; by++) {
+    for (let bx = 0; bx < 8; bx++) {
+      const m = Math.round(blockMeans[by * 8 + bx]);
+      for (let dy = 0; dy < 4; dy++) {
+        for (let dx = 0; dx < 4; dx++) {
+          const idx = ((by * 4 + dy) * 32 + (bx * 4 + dx)) * 4;
+          pixels[idx] = pixels[idx + 1] = pixels[idx + 2] = m;
+          pixels[idx + 3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  const blob = await canvas.convertToBlob();
+  const debugUrl = URL.createObjectURL(blob);
+  return { hash, debugUrl };
 }
 
 /**
- * Compute hamming distance between two 32-byte hash arrays.
+ * Compute hamming distance between two equal-length hash arrays.
  */
 function hammingDistance(a, b) {
   let dist = 0;
-  for (let i = 0; i < 32; i++) {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
     let xor = a[i] ^ b[i];
     while (xor) {
       dist += xor & 1;
@@ -156,13 +204,26 @@ export async function dedupStage(photos, options = {}, onProgress) {
   }
 
   // Pass 2: compute perceptual hashes in parallel, then resolve near-duplicates
-  // sequentially so the "first wins" ordering is stable.
+  // by walking photos in filename order. Camera filenames are monotonic, so
+  // adjacency in filename order is a strong proxy for "taken close in time" —
+  // and bursts are by definition temporally local.
+  const filenameOrdered = afterExact
+    .map((photo, originalIdx) => ({ photo, originalIdx }))
+    .sort((a, b) =>
+      a.photo.file.name.localeCompare(b.photo.file.name, undefined, { numeric: true }),
+    );
+
   let passTwoDone = 0;
   const perceptualHashes = await parallelMap(
-    afterExact,
+    filenameOrdered,
     DEFAULT_STAGE_CONCURRENCY,
-    async (photo) => {
+    async ({ photo }) => {
       try {
+        if (options.debug) {
+          const { hash, debugUrl } = await computePerceptualHash(photo.file, { debug: true });
+          photo._dHashThumbnailUrl = debugUrl;
+          return hash;
+        }
         return await computePerceptualHash(photo.file);
       } catch {
         // HEIC on unsupported browser, etc. — keep the photo; null hash
@@ -172,45 +233,52 @@ export async function dedupStage(photos, options = {}, onProgress) {
     },
     () => {
       passTwoDone++;
-      const overall = 0.4 * total + (passTwoDone / afterExact.length) * 0.6 * total;
+      const overall = 0.4 * total + (passTwoDone / filenameOrdered.length) * 0.6 * total;
       if (onProgress) onProgress(Math.round(overall), total);
     },
   );
 
-  const kept = [];
+  const keptEntries = []; // { photo, originalIdx }
   const keptHashes = [];
   const burstCandidates = [];
   const burstGroupsByRepId = new Map();
 
-  for (let i = 0; i < afterExact.length; i++) {
-    const photo = afterExact[i];
+  for (let i = 0; i < filenameOrdered.length; i++) {
+    const { photo, originalIdx } = filenameOrdered[i];
     const pHash = perceptualHashes[i];
 
     if (pHash === null) {
-      kept.push(photo);
+      keptEntries.push({ photo, originalIdx });
       keptHashes.push(null);
       continue;
     }
 
     let matchedRepIdx = -1;
-    let matchedDist = -1;
-    for (let j = 0; j < keptHashes.length; j++) {
+    let bestDist = Infinity;
+    let bestIdx = -1;
+    const windowStart = Math.max(0, keptHashes.length - PERCEPTUAL_WINDOW);
+    for (let j = keptHashes.length - 1; j >= windowStart; j--) {
       if (keptHashes[j] === null) continue;
       const dist = hammingDistance(pHash, keptHashes[j]);
-      if (dist <= threshold) {
-        matchedRepIdx = j;
-        matchedDist = dist;
-        break;
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = j;
       }
+    }
+    if (bestIdx !== -1 && bestDist <= threshold) {
+      matchedRepIdx = bestIdx;
     }
 
     if (matchedRepIdx === -1) {
-      kept.push(photo);
+      // Record nearest miss for debug visibility, even when no match.
+      if (bestIdx !== -1) photo._nearestDistance = bestDist;
+      keptEntries.push({ photo, originalIdx });
       keptHashes.push(pHash);
     } else {
-      photo._hammingDistance = matchedDist;
+      photo._hammingDistance = bestDist;
+      photo._matchedRepId = keptEntries[matchedRepIdx].photo.id;
       burstCandidates.push(photo);
-      const repId = kept[matchedRepIdx].id;
+      const repId = keptEntries[matchedRepIdx].photo.id;
       let group = burstGroupsByRepId.get(repId);
       if (!group) {
         group = { representativeId: repId, candidateIds: [] };
@@ -219,6 +287,10 @@ export async function dedupStage(photos, options = {}, onProgress) {
       group.candidateIds.push(photo.id);
     }
   }
+
+  // Restore input order so downstream stages aren't surprised.
+  keptEntries.sort((a, b) => a.originalIdx - b.originalIdx);
+  const kept = keptEntries.map((e) => e.photo);
 
   if (onProgress) onProgress(total, total);
 

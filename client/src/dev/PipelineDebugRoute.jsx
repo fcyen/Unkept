@@ -399,7 +399,7 @@ function getNumericScore(id, stage, snapshots) {
     case 'dedup':
       if (p.status === 'kept')  return 1;
       if (p.status === 'exact') return 0;
-      if (p.status === 'burst') return p.score != null ? Math.max(0, 1 - p.score / 10) : 0.5;
+      if (p.status === 'burst') return p.score != null ? Math.max(0, 1 - p.score / 20) : 0.5;
       return null;
     case 'embedding':
       return p.embedded ? 1 : 0;
@@ -465,6 +465,11 @@ function PhotoCard({ photoId, stage, snapshots, getPreviewUrl, isSelected, onSel
 
       {annotation && (
         <div className="absolute bottom-0 inset-x-0">
+          {annotation.overlay && (
+            <div className="px-1.5 py-0.5 text-white text-xs font-mono leading-tight truncate bg-black/60">
+              {annotation.overlay}
+            </div>
+          )}
           <div
             className="px-1.5 py-0.5 text-white text-xs font-mono leading-tight truncate"
             style={{ backgroundColor: annotation.color + 'dd' }}
@@ -500,15 +505,19 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
     ['Orientation', exif.orientation != null ? String(exif.orientation) : null],
   ].filter(([, v]) => v != null);
 
-  // Stage scores across all completed stages for this photo
-  const stageScores = STAGE_ORDER
-    .filter((s) => snapshots[s])
-    .map((s) => {
-      const p = snapshots[s]?.perPhoto?.[photoId];
-      if (!p) return { stage: s, label: 'removed' };
-      const ann = getAnnotation(photoId, s, snapshots);
-      return { stage: s, label: ann?.label ?? '—', color: ann?.color ?? '#9ca3af' };
-    });
+  // Dedup pair view: when inspecting a burst photo, show its matched rep;
+  // when inspecting a kept rep that absorbed candidates, show them.
+  const dedupSnap = snapshots.dedup?.perPhoto?.[photoId];
+  const dedupPairs = (() => {
+    if (stage !== 'dedup' || !dedupSnap) return null;
+    if (dedupSnap.status === 'burst' && dedupSnap.matchedRepId) {
+      return { heading: 'Matched representative', items: [{ id: dedupSnap.matchedRepId, dist: dedupSnap.score }] };
+    }
+    if (dedupSnap.status === 'kept' && dedupSnap.candidates?.length) {
+      return { heading: 'Burst candidates absorbed', items: dedupSnap.candidates };
+    }
+    return null;
+  })();
 
   return (
     <div className="rounded-lg border border-ink/20 bg-white overflow-hidden">
@@ -527,6 +536,17 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             <img src={imgUrl} alt="" className="w-full h-full object-cover" />
           </div>
         )}
+        {stage === 'dedup' && dedupSnap?.dHashThumbnailUrl && (
+          <div className="shrink-0 w-36 h-36 flex flex-col items-center justify-center bg-faint/40">
+            <img
+              src={dedupSnap.dHashThumbnailUrl}
+              alt="dHash input (17×16 grayscale)"
+              className="w-32 h-32 object-cover"
+              style={{ imageRendering: 'pixelated' }}
+            />
+            <p className="text-[10px] font-mono text-muted mt-1">17×16 grayscale</p>
+          </div>
+        )}
         <div className="flex-1 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-0.5 content-start">
           {rows.map(([label, value]) => (
             <div key={label} className="flex gap-2 col-span-1">
@@ -535,21 +555,40 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
             </div>
           ))}
         </div>
-        <div className="shrink-0 px-4 py-3 space-y-1">
-          <p className="text-xs text-muted uppercase tracking-wide mb-2">Stage scores</p>
-          {stageScores.map(({ stage: s, label, color }) => (
-            <div key={s} className="flex items-center gap-2">
-              <span className="text-xs text-muted w-16 shrink-0">{STAGE_LABELS[s]}</span>
-              <span
-                className="text-xs font-mono px-1.5 py-0.5 rounded text-white"
-                style={{ backgroundColor: color + 'dd' }}
-              >
-                {label}
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
+      {dedupPairs && (
+        <div className="px-4 py-3 border-t border-faint">
+          <p className="text-xs text-muted uppercase tracking-wide mb-2">{dedupPairs.heading}</p>
+          <div className="flex gap-2 flex-wrap">
+            {dedupPairs.items.map(({ id, dist }) => {
+              const pairThumb = snapshots.thumbnail?.perPhoto?.[id]?.thumbnailUrl ?? getPreviewUrl(id);
+              const pairName = snapshots.exif?.perPhoto?.[id]?.name ?? id;
+              const pairDHash = snapshots.dedup?.perPhoto?.[id]?.dHashThumbnailUrl;
+              return (
+                <div key={id} className="shrink-0 w-24">
+                  <div className="flex gap-1">
+                    {pairThumb ? (
+                      <img src={pairThumb} alt="" className="w-24 h-24 object-cover rounded border border-faint" />
+                    ) : (
+                      <div className="w-24 h-24 rounded border border-faint bg-faint" />
+                    )}
+                  </div>
+                  {pairDHash && (
+                    <img
+                      src={pairDHash}
+                      alt=""
+                      className="w-24 h-24 object-cover rounded border border-faint mt-1"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                  )}
+                  <p className="text-[10px] font-mono text-ink truncate mt-1">{pairName}</p>
+                  <p className="text-[10px] font-mono text-muted">d={dist ?? '?'}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -584,13 +623,14 @@ function getAnnotation(photoId, stage, snapshots) {
 
     case 'dedup': {
       if (!p) return { label: 'n/a', color: '#9ca3af' };
-      if (p.status === 'kept')  return { label: 'kept',   color: scoreToColor(1) };
-      if (p.status === 'exact') return { label: 'exact',  color: scoreToColor(0) };
+      const distOverlay = p.score != null ? `d=${p.score}` : null;
+      if (p.status === 'kept')  return { label: 'kept',  color: scoreToColor(1), overlay: distOverlay };
+      if (p.status === 'exact') return { label: 'exact', color: scoreToColor(0), overlay: null };
       if (p.status === 'burst') {
-        const dist = p.score;
         return {
-          label: dist != null ? `burst d=${dist}` : 'burst',
-          color: scoreToColor(dist != null ? Math.max(0, 1 - dist / 10) : 0.5),
+          label: 'burst',
+          color: scoreToColor(p.score != null ? Math.max(0, 1 - p.score / 20) : 0.5),
+          overlay: distOverlay,
         };
       }
       return null;

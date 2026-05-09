@@ -13,6 +13,23 @@
 
 const DEFAULT_GAP_MS = 45 * 60 * 1000; // 45 minutes
 
+// Filename is used as a tiebreaker when timestamps match (bursts often share
+// a second) and as the sort key for photos missing a timestamp. Cameras name
+// files monotonically, so this preserves capture order in both cases.
+function filenameOf(photo) {
+  return photo.file?.name ?? photo.name ?? '';
+}
+
+function compareByTimeThenName(a, b) {
+  const ta = new Date(a.timestamp) - new Date(b.timestamp);
+  if (ta !== 0) return ta;
+  return filenameOf(a).localeCompare(filenameOf(b), undefined, { numeric: true });
+}
+
+function compareByName(a, b) {
+  return filenameOf(a).localeCompare(filenameOf(b), undefined, { numeric: true });
+}
+
 /**
  * Group photos by calendar date (YYYY-MM-DD).
  * Each day forms one cluster. Within each cluster, photos are sorted by time.
@@ -29,8 +46,9 @@ function clusterByDay(photos) {
     }
   }
 
-  // Sort all dated photos by timestamp
-  dated.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  // Sort all dated photos by timestamp, with filename as tiebreaker
+  dated.sort(compareByTimeThenName);
+  undated.sort(compareByName);
 
   // Group by date string
   const byDate = new Map();
@@ -72,8 +90,9 @@ function clusterByTimeGap(photos, gapMs = DEFAULT_GAP_MS) {
     return undated.length > 0 ? [undated] : [];
   }
 
-  // Sort by timestamp
-  dated.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  // Sort by timestamp, with filename as tiebreaker
+  dated.sort(compareByTimeThenName);
+  undated.sort(compareByName);
 
   const clusters = [];
   let current = [dated[0]];
