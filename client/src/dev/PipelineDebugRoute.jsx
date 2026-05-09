@@ -29,7 +29,10 @@ async function loadSampleFiles() {
 }
 
 export default function PipelineDebugRoute() {
-  const { phase, progress, snapshots, error, run, reset, getPreviewUrl, revokeAll } = usePipelineDebug();
+  const {
+    phase, progress, snapshots, error, run, reset, getPreviewUrl, revokeAll,
+    useSemanticClustering, setUseSemanticClustering,
+  } = usePipelineDebug();
   const [selectedStage, setSelectedStage] = useState('qualityScore');
   const [sortByScore, setSortByScore] = useState(false);
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
@@ -67,14 +70,29 @@ export default function PipelineDebugRoute() {
             Phase 1 inspector — per-photo scoring at every stage.
           </p>
         </div>
-        {phase !== PHASES.IDLE && (
-          <button
-            className="text-sm text-muted underline underline-offset-2"
-            onClick={handleNewRun}
-          >
-            New run
-          </button>
-        )}
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <span className="text-sm text-muted">Semantic clustering</span>
+            <button
+              role="switch"
+              aria-checked={useSemanticClustering}
+              onClick={() => setUseSemanticClustering((v) => !v)}
+              className={`relative w-9 h-5 rounded-full transition-colors ${useSemanticClustering ? 'bg-ink' : 'bg-faint'}`}
+            >
+              <span
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${useSemanticClustering ? 'translate-x-4' : 'translate-x-0.5'}`}
+              />
+            </button>
+          </label>
+          {phase !== PHASES.IDLE && (
+            <button
+              className="text-sm text-muted underline underline-offset-2"
+              onClick={handleNewRun}
+            >
+              New run
+            </button>
+          )}
+        </div>
       </header>
 
       {phase === PHASES.IDLE && <DropZone onDrop={run} hasSamples={sampleImageUrls.length > 0} />}
@@ -234,6 +252,9 @@ function stageStat(stage, snap) {
   switch (stage) {
     case 'exif':         return `${snap.count} photos`;
     case 'dedup':        return `${snap.keptCount} kept · ${snap.exactCount + snap.burstCount} removed`;
+    case 'embedding':    return snap.embeddedCount != null
+      ? `${snap.embeddedCount} embedded · ${snap.nullCount} skipped`
+      : 'skipped';
     case 'cluster':      return `${snap.clusterCount} clusters`;
     case 'heroSelect':   return `${snap.heroCount} hero${snap.heroCount !== 1 ? 's' : ''}`;
     case 'chapterBuilder': return `${snap.chapterCount} chapters · ${snap.selectedCount} photos`;
@@ -264,9 +285,28 @@ function StageStats({ stage, snapshots }) {
         'Burst candidates are perceptually similar photos (hamming distance ≤ 5). Score shown is the distance.',
       ];
       break;
-    case 'cluster':
-      lines = [`${Object.keys(snap.perPhoto).length} photos → ${snap.clusterCount} clusters (grouped by calendar day).`];
+    case 'embedding': {
+      if (snap.embeddedCount == null || (snap.embeddedCount === 0 && snap.nullCount === 0)) {
+        lines = ['Embedding stage was not run (semantic clustering is off).'];
+      } else if (snap.nullCount > 0 && snap.embeddedCount === 0) {
+        lines = [
+          'Embedding server was unreachable — all embeddings are null.',
+          'Start the server (see docs/ai-embedding-server.md) and run again for semantic clustering.',
+        ];
+      } else {
+        lines = [
+          `CLIP ViT-B/32 embedded ${snap.embeddedCount} photo${snap.embeddedCount !== 1 ? 's' : ''} as 512-dim L2-normalised vectors.${snap.nullCount > 0 ? ` ${snap.nullCount} failed (decode error or server timeout).` : ''}`,
+          'Vectors are used by the Cluster stage — cosine similarity groups visually similar photos together.',
+        ];
+      }
       break;
+    }
+    case 'cluster': {
+      const isSemantic = snap.clusterCount > 0 && snapshots.embedding?.embeddedCount > 0;
+      const mode = isSemantic ? 'visual content (CLIP k-means)' : 'calendar day';
+      lines = [`${Object.keys(snap.perPhoto).length} photos → ${snap.clusterCount} clusters (grouped by ${mode}).`];
+      break;
+    }
     case 'heroSelect':
       lines = [`${snap.heroCount} hero${snap.heroCount !== 1 ? 's' : ''} selected using middle-photo heuristic. Stars mark heroes.`];
       break;
@@ -361,6 +401,8 @@ function getNumericScore(id, stage, snapshots) {
       if (p.status === 'exact') return 0;
       if (p.status === 'burst') return p.score != null ? Math.max(0, 1 - p.score / 10) : 0.5;
       return null;
+    case 'embedding':
+      return p.embedded ? 1 : 0;
     case 'heroSelect':
       return p.isHero ? 1 : 0;
     case 'cluster':
@@ -552,6 +594,13 @@ function getAnnotation(photoId, stage, snapshots) {
         };
       }
       return null;
+    }
+
+    case 'embedding': {
+      if (!p) return { label: 'skipped', color: '#9ca3af' };
+      return p.embedded
+        ? { label: 'embed ok', color: '#3b82f6' }
+        : { label: 'null', color: '#ef4444' };
     }
 
     case 'cluster': {

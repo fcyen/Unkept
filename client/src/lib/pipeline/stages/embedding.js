@@ -23,6 +23,7 @@ const EMBED_SERVER = 'http://localhost:8000';
 // CLIP's 224px input to have good signal, small enough to keep localhost
 // payloads manageable (~30–50 KB per photo as JPEG).
 const SEND_SIZE = 512;
+const BATCH_SIZE = 16;
 
 /**
  * Decode a File and resize to SEND_SIZE on the longest edge.
