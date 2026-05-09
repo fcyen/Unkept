@@ -8,6 +8,8 @@
 import { exifStage } from './stages/exif.js';
 import { dedupStage } from './stages/dedup.js';
 import { clusterStage } from './stages/cluster.js';
+import { clusterSemanticStage } from './stages/clusterSemantic.js';
+import { embeddingStage } from './stages/embedding.js';
 import { heroSelectStage } from './stages/heroSelect.js';
 import { chapterBuilderStage } from './stages/chapterBuilder.js';
 import { thumbnailStage } from './stages/thumbnail.js';
@@ -39,13 +41,15 @@ export async function runPhase1(files, deps = {}) {
     onProgress = noop,
     onStageStart = noop,
     onStageComplete = noop,
+    useSemanticClustering = false,
     stages: stageOverrides = {},
   } = deps;
 
   const stages = {
     exif: exifStage,
     dedup: dedupStage,
-    cluster: clusterStage,
+    embedding: embeddingStage,
+    cluster: useSemanticClustering ? clusterSemanticStage : clusterStage,
     heroSelect: heroSelectStage,
     chapterBuilder: chapterBuilderStage,
     thumbnail: thumbnailStage,
@@ -68,8 +72,17 @@ export async function runPhase1(files, deps = {}) {
   const dedupResult = await stages.dedup(photos, {}, emit('dedup'));
   onStageComplete('dedup', dedupResult);
 
+  // Embedding stage only runs when semantic clustering is enabled.
+  // It adds photo.embedding (Float32Array | null) to each photo.
+  let preClusterInput = dedupResult;
+  if (useSemanticClustering) {
+    onStageStart('embedding');
+    preClusterInput = await stages.embedding(dedupResult, {}, emit('embedding'));
+    onStageComplete('embedding', preClusterInput);
+  }
+
   onStageStart('cluster');
-  const clusterResult = await stages.cluster(dedupResult, {}, emit('cluster'));
+  const clusterResult = await stages.cluster(preClusterInput, {}, emit('cluster'));
   onStageComplete('cluster', clusterResult);
 
   onStageStart('heroSelect');

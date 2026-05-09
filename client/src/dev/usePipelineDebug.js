@@ -3,12 +3,13 @@ import { PHASES, runPhase1 } from '../lib/pipeline/orchestrator.js';
 import { dedupStage } from '../lib/pipeline/stages/dedup.js';
 
 export const STAGE_ORDER = [
-  'exif', 'dedup', 'cluster', 'heroSelect', 'chapterBuilder', 'thumbnail', 'qualityScore',
+  'exif', 'dedup', 'embedding', 'cluster', 'heroSelect', 'chapterBuilder', 'thumbnail', 'qualityScore',
 ];
 
 export const STAGE_LABELS = {
   exif: 'EXIF',
   dedup: 'Dedup',
+  embedding: 'Embed',
   cluster: 'Cluster',
   heroSelect: 'Hero',
   chapterBuilder: 'Chapters',
@@ -21,6 +22,7 @@ export function usePipelineDebug() {
   const [progress, setProgress] = useState(null);
   const [snapshots, setSnapshots] = useState({});
   const [error, setError] = useState(null);
+  const [useSemanticClustering, setUseSemanticClustering] = useState(false);
 
   // Object URLs created from File refs right after exif; revoked once thumbnails arrive.
   const previewUrlsRef = useRef(new Map());
@@ -90,17 +92,15 @@ export function usePipelineDebug() {
         },
         onStageStart,
         onStageComplete,
-        stages: {
-          dedup: (photos, _opts, prog) => dedupStage(photos, { debug: true }, prog),
-        },
+        useSemanticClustering,
       });
     } catch (err) {
       setError(err);
       setPhase(PHASES.ERROR);
     }
-  }, [revokeAll]);
+  }, [revokeAll, useSemanticClustering]);
 
-  return { phase, progress, snapshots, error, run, reset, getPreviewUrl, revokeAll };
+  return { phase, progress, snapshots, error, run, reset, getPreviewUrl, revokeAll, useSemanticClustering, setUseSemanticClustering };
 }
 
 function extractSnapshot(name, output) {
@@ -162,6 +162,19 @@ function extractSnapshot(name, output) {
         burstCount: output.burstCandidates.length,
         perPhoto,
       };
+    }
+
+    case 'embedding': {
+      const photos = output.photos ?? [];
+      const perPhoto = {};
+      let embeddedCount = 0;
+      let nullCount = 0;
+      for (const p of photos) {
+        const hasEmbed = p.embedding != null;
+        if (hasEmbed) embeddedCount++; else nullCount++;
+        perPhoto[p.id] = { embedded: hasEmbed };
+      }
+      return { embeddedCount, nullCount, perPhoto };
     }
 
     case 'cluster': {
