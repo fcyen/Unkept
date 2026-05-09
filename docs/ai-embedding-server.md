@@ -120,8 +120,10 @@ Returns `{"status": "ok", "model": "clip-ViT-B-32"}`.
 }
 ```
 
-Images should be 224×224 JPEG data URLs. Larger images are accepted but
-slower; the server does not resize.
+Images should be JPEG data URLs. The client sends photos at 512px on the
+longest edge — large enough for the server's bicubic preprocessing to have
+good signal when it resizes to CLIP's 224×224 input. The server does not
+resize; that is handled by `sentence-transformers`' preprocessing pipeline.
 
 **Response:**
 ```json

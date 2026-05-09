@@ -19,17 +19,24 @@
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const EMBED_SERVER = 'http://localhost:8000';
-const CLIP_SIZE = 224;   // CLIP ViT-B/32 input resolution
-const BATCH_SIZE = 16;   // images per HTTP request to the server
+// Send photos at 512px — large enough for the server's bicubic resize to
+// CLIP's 224px input to have good signal, small enough to keep localhost
+// payloads manageable (~30–50 KB per photo as JPEG).
+const SEND_SIZE = 512;
 
 /**
- * Decode a File to a 224×224 JPEG data URL for CLIP input.
+ * Decode a File and resize to SEND_SIZE on the longest edge.
+ * The server's preprocessing pipeline (bicubic) handles the final
+ * resize to 224×224 — we just keep the payload small.
  */
 async function fileToClipDataUrl(file) {
   const bitmap = await createImageBitmap(file);
-  const canvas = new OffscreenCanvas(CLIP_SIZE, CLIP_SIZE);
+  const scale = SEND_SIZE / Math.max(bitmap.width, bitmap.height);
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, CLIP_SIZE, CLIP_SIZE);
+  ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
 
   const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
