@@ -8,12 +8,15 @@
  * Two-pass deduplication:
  * 1. Exact hash: first 64KB + last 64KB + file size (no image decoding needed)
  *    Exact duplicates are dropped entirely — they have no frame variation.
- * 2. Perceptual hash: 32x32 grayscale, averaged into an 8x8 grid of 4x4 blocks,
- *    then a 64-bit block-mean hash (bit i = block[i].mean > median). Hamming
- *    distance comparison. The 4x4 averaging is what makes this robust to
- *    JPEG compression noise and small subject shifts — single-pixel hashes
- *    (aHash, dHash) failed because flat regions like sky/wall flipped bits
- *    freely between burst frames.
+ * 2. Perceptual hash (pHash, DCT-based): resize to 32x32 grayscale, compute
+ *    separable 2D DCT-II, take top-left 8x8 low-frequency coefficients (64
+ *    values), hash bit i = coeff[i] > mean(all 64). Hamming distance comparison.
+ *    DCT captures structural frequency content rather than raw brightness, so
+ *    two photos of the same scene with similar brightness (sky, wall, same room)
+ *    but different subjects will have different frequency signatures and stay
+ *    separated — the block-mean hash failed this because it only encoded overall
+ *    brightness layout. Burst frames share nearly identical frequency signatures
+ *    and still cluster correctly.
  *    Near-duplicates become burst candidates — preserved for live-photo
  *    rendering in PR 2F but not shown as individual photos in the story.
  *    Pass 2 sorts by filename and only compares each photo against the last
@@ -27,7 +30,7 @@
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const CHUNK_SIZE = 65536; // 64KB
-const DEFAULT_HAMMING_THRESHOLD = 10; // out of 64 bits
+const DEFAULT_HAMMING_THRESHOLD = 10; // out of 64 bits; pHash false-positive rate is low enough that 10 captures true bursts without collapsing distinct scenes
 const PERCEPTUAL_WINDOW = 5;
 
 /**
@@ -61,14 +64,22 @@ async function computeExactHash(file) {
 }
 
 /**
- * Compute a block-mean perceptual fingerprint.
- * Resizes image to 32x32 grayscale, then averages into an 8x8 grid of
- * 4x4 blocks. Hash bit i is 1 iff block[i].mean > median across all 64
- * blocks. The 4x4 averaging is the whole point: single-pixel hashes
- * (aHash, dHash) have most of their bits living in flat regions (sky,
- * wall, skin) where adjacent pixels differ by a couple grayscale units
- * and JPEG compression noise flips comparisons freely between burst
- * frames. Averaging eats that noise.
+ * Compute a pHash (DCT-based) perceptual fingerprint.
+ *
+ * Algorithm:
+ *   1. Resize to 32x32 grayscale.
+ *   2. Separable 2D DCT-II: first reduce each row to 8 low-frequency
+ *      components, then reduce each of those 8 columns to 8 components.
+ *      Result is the top-left 8x8 sub-block of the full 32x32 DCT — the
+ *      64 coefficients that carry the most structural energy.
+ *   3. Hash bit i = 1 iff dctCoeffs[i] > mean(all 64 coefficients).
+ *
+ * Why DCT over block-mean: block-mean only encodes brightness layout.
+ * Two photos of different subjects shot in the same room at the same time
+ * of day can have nearly identical block-mean signatures. DCT encodes
+ * structural frequency content — the spatial patterns of edges and
+ * gradients — so two distinct scenes produce different signatures even
+ * under similar illumination.
  *
  * Returns a Uint8Array of 8 bytes (64 bits).
  */
@@ -83,49 +94,72 @@ async function computePerceptualHash(file, options = {}) {
   const pixels = imageData.data;
 
   // Convert to grayscale (32 * 32 = 1024 pixels)
-  const gray = new Uint8Array(1024);
+  const gray = new Float32Array(1024);
   for (let i = 0; i < 1024; i++) {
-    const offset = i * 4;
-    gray[i] = Math.round(0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2]);
+    const o = i * 4;
+    gray[i] = 0.299 * pixels[o] + 0.587 * pixels[o + 1] + 0.114 * pixels[o + 2];
   }
 
-  // 8x8 = 64 block means, each over a 4x4 patch.
-  const blockMeans = new Float32Array(64);
-  for (let by = 0; by < 8; by++) {
-    for (let bx = 0; bx < 8; bx++) {
+  // Separable 2D DCT-II over a 32x32 input, producing only the top-left
+  // 8x8 output block.  Total work: 32*8*32 + 8*8*32 = 10240 muls.
+  const N = 32;
+  const scale = Math.PI / (2 * N);
+
+  // Step 1: for each of the 8 target row-frequencies u, compute the 1D row
+  // transform across all 32 source rows — giving a 32-column intermediate.
+  const rowT = new Float32Array(8 * N); // [u][y]
+  for (let u = 0; u < 8; u++) {
+    for (let y = 0; y < N; y++) {
       let sum = 0;
-      for (let dy = 0; dy < 4; dy++) {
-        for (let dx = 0; dx < 4; dx++) {
-          sum += gray[(by * 4 + dy) * 32 + (bx * 4 + dx)];
-        }
+      const row = y * N;
+      for (let x = 0; x < N; x++) {
+        sum += gray[row + x] * Math.cos(u * (2 * x + 1) * scale);
       }
-      blockMeans[by * 8 + bx] = sum / 16;
+      rowT[u * N + y] = sum;
     }
   }
 
-  // Median (average of 32nd and 33rd sorted values for an even count).
-  const sorted = [...blockMeans].sort((a, b) => a - b);
-  const median = (sorted[31] + sorted[32]) / 2;
+  // Step 2: column transform — for each (u, v) output coefficient, combine
+  // the 32 row-transformed values along the column dimension.
+  const dctCoeffs = new Float32Array(64); // [v*8 + u]
+  for (let v = 0; v < 8; v++) {
+    for (let u = 0; u < 8; u++) {
+      let sum = 0;
+      const uRow = u * N;
+      for (let y = 0; y < N; y++) {
+        sum += rowT[uRow + y] * Math.cos(v * (2 * y + 1) * scale);
+      }
+      dctCoeffs[v * 8 + u] = sum;
+    }
+  }
 
-  // 64-bit hash, packed into 8 bytes.
+  // Mean of all 64 coefficients; hash bit i = coeff[i] > mean.
+  let mean = 0;
+  for (let i = 0; i < 64; i++) mean += dctCoeffs[i];
+  mean /= 64;
+
   const hash = new Uint8Array(8);
   for (let i = 0; i < 64; i++) {
-    if (blockMeans[i] > median) {
+    if (dctCoeffs[i] > mean) {
       hash[i >> 3] |= (1 << (i & 7));
     }
   }
 
   if (!options.debug) return hash;
 
-  // Debug path: paint each 4x4 block as a flat patch of its mean value, so
-  // the dev route shows exactly what the hash "sees".
+  // Debug path: render the 8x8 DCT coefficient magnitudes as a 32x32 tile
+  // (each coefficient painted as a 4x4 block), normalised so the largest
+  // magnitude maps to white. This lets the dev route see what frequency
+  // structure the hash is comparing.
+  const maxAbs = dctCoeffs.reduce((m, v) => Math.max(m, Math.abs(v)), 1e-9);
   for (let by = 0; by < 8; by++) {
     for (let bx = 0; bx < 8; bx++) {
-      const m = Math.round(blockMeans[by * 8 + bx]);
+      // Map [-maxAbs, maxAbs] → [0, 255]; positive = bright, negative = dark.
+      const val = Math.round(((dctCoeffs[by * 8 + bx] / maxAbs) * 0.5 + 0.5) * 255);
       for (let dy = 0; dy < 4; dy++) {
         for (let dx = 0; dx < 4; dx++) {
           const idx = ((by * 4 + dy) * 32 + (bx * 4 + dx)) * 4;
-          pixels[idx] = pixels[idx + 1] = pixels[idx + 2] = m;
+          pixels[idx] = pixels[idx + 1] = pixels[idx + 2] = val;
           pixels[idx + 3] = 255;
         }
       }
@@ -221,7 +255,7 @@ export async function dedupStage(photos, options = {}, onProgress) {
       try {
         if (options.debug) {
           const { hash, debugUrl } = await computePerceptualHash(photo.file, { debug: true });
-          photo._dHashThumbnailUrl = debugUrl;
+          photo._pHashThumbnailUrl = debugUrl;
           return hash;
         }
         return await computePerceptualHash(photo.file);
