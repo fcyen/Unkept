@@ -1,6 +1,7 @@
 dist/
 node_modules/
 server/uploads/*
+server/embed/__pycache__/
 !server/.gitkeep-uploads
 .env
 .*

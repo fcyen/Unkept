@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:debug": "vite --mode debug",
+    "dev:debug": "sh -c 'SAMPLE_IMAGES_DIR=\"$1\" vite --mode debug' --",
     "build": "vite build",
-    "build:debug": "vite build --mode debug",
+    "build:debug": "sh -c 'SAMPLE_IMAGES_DIR=\"$1\" vite build --mode debug' --",
     "preview": "vite preview",
     "test": "vitest run"
   },

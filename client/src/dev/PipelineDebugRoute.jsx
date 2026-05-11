@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PHASES } from '../lib/pipeline/orchestrator.js';
 import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
-import sampleImageUrls from 'virtual:sample-images';
+import sampleImageUrls, { sampleImagesDir } from 'virtual:sample-images';
 
 const CLUSTER_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
@@ -165,7 +165,7 @@ function DropZone({ onDrop, hasSamples }) {
         <div className="flex items-center justify-between rounded-lg border border-faint bg-white px-4 py-3">
           <p className="text-sm text-muted">
             {sampleImageUrls.length} sample image{sampleImageUrls.length !== 1 ? 's' : ''} in{' '}
-            <code className="font-mono text-xs">public/sample-images/</code>
+            <code className="font-mono text-xs">{sampleImagesDir}</code>
           </p>
           <button
             className="text-sm px-3 py-1 rounded-full bg-ink text-cream hover:bg-black"
