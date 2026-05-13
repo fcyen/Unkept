@@ -10,27 +10,59 @@
  * Photos animate in with staggered delays so the frame feels composed
  * rather than loaded. Duration: ~4.5s (owner: SlideshowPlayer).
  *
- * Captions are out of MVP — text lives on chapter dividers only.
- * See PHASE-2-DESIGN-INTENT.md.
+ * When the user opts into AI captions (PR 3A), a `caption` string is
+ * passed in and rendered as a bottom overlay on top of the layout —
+ * see PHASE-2-DESIGN-INTENT.md "Decisions locked" #5.
  */
 
-export default function PhotoCardFrame({ frame, photos }) {
+export default function PhotoCardFrame({ frame, photos, caption, captionError }) {
   const { layout, photoIds } = frame;
   const items = photoIds.map((id) => photos[id]).filter(Boolean);
 
+  let layoutEl;
   switch (layout) {
     case 'landscape-3':
-      return <Landscape3 items={items} />;
+      layoutEl = <Landscape3 items={items} />;
+      break;
     case 'portrait-4':
-      return <Portrait4 items={items} />;
+      layoutEl = <Portrait4 items={items} />;
+      break;
     case 'mixed-2p-1l':
-      return <Mixed2p1l items={items} frame={frame} />;
+      layoutEl = <Mixed2p1l items={items} frame={frame} />;
+      break;
     case 'landscape-2':
-      return <Landscape2 items={items} />;
+      layoutEl = <Landscape2 items={items} />;
+      break;
     case 'portrait-1':
     default:
-      return <Portrait1 items={items} />;
+      layoutEl = <Portrait1 items={items} />;
   }
+
+  return (
+    <>
+      {layoutEl}
+      <CaptionOverlay text={caption} error={captionError} />
+    </>
+  );
+}
+
+function CaptionOverlay({ text, error }) {
+  // Skip rendering entirely until the first delta arrives, so frames
+  // without captions look identical to the pre-3A behaviour. The
+  // wrapper fades in on first mount; subsequent deltas update the
+  // text in place so streaming reads as "typewriter" not "blink".
+  if (!text && !error) return null;
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-20 pt-16 pb-6 px-5 bg-gradient-to-t from-black/85 via-black/55 to-transparent pointer-events-none animate-fade-in">
+      {error ? (
+        <p className="font-sans text-xs text-red-300/80">{error}</p>
+      ) : (
+        <p className="font-serif text-white text-base md:text-lg leading-snug">
+          {text}
+        </p>
+      )}
+    </div>
+  );
 }
 
 // --- Layouts ---------------------------------------------------------------

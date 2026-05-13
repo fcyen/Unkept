@@ -51,8 +51,14 @@ export default function UploadPage({ onStoryReady }) {
   const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
   const [geocodingProgress, setGeocodingProgress] = useState(null);
+  const [generateCaptions, setGenerateCaptions] = useState(false);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
+  // generateCaptions can change between pipeline start and handoff; the
+  // ref keeps the value we'll send to App even if the user toggles it
+  // after pressing Generate.
+  const generateCaptionsRef = useRef(generateCaptions);
+  generateCaptionsRef.current = generateCaptions;
 
   const pipeline = usePipeline();
 
@@ -86,7 +92,7 @@ export default function UploadPage({ onStoryReady }) {
         setPreviews([]);
         setPhotos([]);
 
-        onStoryReady(story);
+        onStoryReady(story, { generateCaptions: generateCaptionsRef.current });
       } catch (err) {
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
@@ -220,6 +226,22 @@ export default function UploadPage({ onStoryReady }) {
             <p className="font-sans text-xs text-red-600">{error}</p>
           </div>
         )}
+
+        <label className="flex items-start gap-2 mb-4 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={generateCaptions}
+            onChange={(e) => setGenerateCaptions(e.target.checked)}
+            disabled={processing}
+            className="mt-0.5 accent-ink"
+          />
+          <span className="font-sans text-xs text-muted leading-relaxed">
+            Add AI captions
+            <span className="block text-faint">
+              Sends hero thumbnails to a server that calls Claude.
+            </span>
+          </span>
+        </label>
 
         <ProgressButton
           processing={processing}

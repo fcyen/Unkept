@@ -242,8 +242,17 @@ export default function SlideshowPlayer({ story, onExit }) {
             exiting={exiting}
           />
         );
-      case 'photoCard':
-        return <PhotoCardFrame frame={currentFrame} photos={photos} />;
+      case 'photoCard': {
+        const entry = story.captions?.[currentFrame.chapterId];
+        return (
+          <PhotoCardFrame
+            frame={currentFrame}
+            photos={photos}
+            caption={entry?.text || ''}
+            captionError={entry?.error || null}
+          />
+        );
+      }
       case 'coda':
         return (
           <CodaFrame
@@ -255,7 +264,7 @@ export default function SlideshowPlayer({ story, onExit }) {
       default:
         return null;
     }
-  }, [currentFrame, photos, exiting, status, startPlayback, replay]);
+  }, [currentFrame, photos, exiting, status, startPlayback, replay, story.captions]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none">

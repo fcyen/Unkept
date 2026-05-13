@@ -343,11 +343,13 @@ Testing in April 2026 surfaced that the new pipeline feels noticeably slower tha
 > Learning focus: LLM API fundamentals → tool use → agentic reasoning.
 > Work through these in order — each step builds on the last.
 
-**PR 3A: Caption generation — raw API**
-- Server-side Claude API proxy (thumbnails never sent from browser directly)
-- Anthropic SDK: messages, prompt caching (same system prompt per story = significant token savings), streaming
-- Simple call: send hero thumbnail + chapter metadata → receive caption
-- Vercel AI SDK on the client for streaming caption display in React
+**PR 3A: Caption generation — raw API** **[done]**
+- Server-side Claude API proxy at `server/routes/caption.js`. Thumbnails go through the proxy; the browser never holds the Anthropic key.
+- `@anthropic-ai/sdk` direct: `messages.stream()`, prompt caching via `cache_control: ephemeral` on the system prompt (~5× savings across the 6-ish chapters in a typical trip), Server-Sent Events back to the client.
+- Default model: `claude-haiku-4-5-20251001` (override via `ANTHROPIC_MODEL`).
+- Client: `client/src/lib/captions.js` consumes the SSE stream with native `fetch` + `ReadableStream`. The Vercel AI SDK is deferred — the SSE protocol here is small (`delta` / `done` / `error`) and the surrounding codebase has no SDK-specific React hooks yet; folding it in is a follow-up once we have multiple streaming endpoints.
+- UI: opt-in checkbox on `UploadPage`; captions stream into `story.captions[chapterId]` and render as a bottom-gradient overlay on `PhotoCardFrame` (matches "Decisions locked" #5 in `PHASE-2-DESIGN-INTENT.md`).
+- Captions stream serially per chapter to keep the cached system prompt hot across the trip.
 
 **PR 3B: Agentic caption generation — tool use**
 - Redesign caption generation as an agent with tools:

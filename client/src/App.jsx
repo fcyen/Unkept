@@ -1,8 +1,9 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import UploadPage from './components/UploadPage.jsx';
 import SlideshowPlayer from './components/slideshow/SlideshowPlayer.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
+import { generateStoryCaptions } from './lib/captions.js';
 
 // Debug routes are lazy-imported and only resolved when MODE === 'debug'.
 // Vite replaces import.meta.env.MODE with a literal string at build time,
@@ -26,6 +27,45 @@ const compatibility = checkCompatibility();
 
 export default function App() {
   const [story, setStory] = useState(null);
+  const [captionsRequested, setCaptionsRequested] = useState(false);
+
+  // Stream AI captions in once a story lands (only if the user opted in
+  // on the upload screen). Each delta is appended to story.captions —
+  // PhotoCardFrame renders it as a bottom overlay as it grows.
+  useEffect(() => {
+    if (!story || !captionsRequested) return undefined;
+    if (story.captions && Object.keys(story.captions).length > 0) return undefined;
+
+    const ac = new AbortController();
+    generateStoryCaptions(story, {
+      signal: ac.signal,
+      onDelta: (chapterId, delta, info) => {
+        setStory((prev) => {
+          if (!prev) return prev;
+          const captions = { ...(prev.captions || {}) };
+          const entry = captions[chapterId] || { text: '', error: null, done: false };
+          if (info?.error) {
+            captions[chapterId] = { ...entry, error: info.error.message || 'failed' };
+          } else if (delta) {
+            captions[chapterId] = { ...entry, text: entry.text + delta };
+          }
+          return { ...prev, captions };
+        });
+      },
+    }).catch(() => { /* per-chapter errors are already surfaced via onDelta */ });
+
+    return () => ac.abort();
+  }, [story, captionsRequested]);
+
+  const handleStoryReady = (s, opts) => {
+    setCaptionsRequested(Boolean(opts?.generateCaptions));
+    setStory(s);
+  };
+
+  const handleExit = () => {
+    setStory(null);
+    setCaptionsRequested(false);
+  };
 
   if (isPipelineRoute) {
     return <Suspense fallback={null}><PipelineDebugRoute /></Suspense>;
@@ -40,8 +80,8 @@ export default function App() {
   }
 
   if (story) {
-    return <SlideshowPlayer story={story} onExit={() => setStory(null)} />;
+    return <SlideshowPlayer story={story} onExit={handleExit} />;
   }
 
-  return <UploadPage onStoryReady={setStory} />;
+  return <UploadPage onStoryReady={handleStoryReady} />;
 }

@@ -7,7 +7,8 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ```
 /  (repo root)
   client/       React + Vite + Tailwind (all active development)
-  server/       Express stub (Phase 3, not in active development)
+  server/       Express; hosts the `/api/caption` Anthropic proxy (PR 3A).
+                Older itinerary/upload/story routes are still stubs.
   EXECUTIVE-SUMMARY.md   Product overview
   MVP.md                 MVP feature scope and quality bar
   ARCHITECTURE.md        System design
@@ -61,3 +62,20 @@ cd client
 npm install
 npm run dev
 ```
+
+## Server
+The Express server in `server/` is only needed for opt-in features that route
+through Claude. Today that's PR 3A — `POST /api/caption` proxies a hero
+thumbnail + chapter metadata to Anthropic's Messages API with streaming and
+prompt caching enabled.
+
+```
+cd server
+npm install
+ANTHROPIC_API_KEY=sk-... npm run dev   # defaults to http://localhost:3001
+```
+
+Optional env:
+- `ANTHROPIC_MODEL` — override the model (defaults to `claude-haiku-4-5-20251001`).
+- Client points at the server via `VITE_SERVER_URL` (default
+  `http://localhost:3001`); set it in `client/.env.local` when deploying.
