@@ -34,8 +34,8 @@ This plan reflects the revised architecture from the system design review (April
       name: "IMG_1234.jpg",
       timestamp: "2025-03-15T08:30:00Z",  // from EXIF, or null
       coords: { lat: 35.6762, lng: 139.6503 },  // raw EXIF GPS, or null
-      thumbnailUrl: "data:image/jpeg;base64,...",      // 200px, all selected photos
-      thumbnailHeroUrl: "data:image/jpeg;base64,...",  // 400px, hero photos on desktop only (null on mobile)
+      thumbnailUrl: "data:image/jpeg;base64,...",      // 200px, all selected photos (debug surfaces + variance calibration)
+      thumbnailHeroUrl: "data:image/jpeg;base64,...",  // 1000px, all selected photos (slideshow renderer)
       thumbnailFailed: false,                          // true if HEIC decode failed
       qualityScore: 0.82,    // 0–1, from blur detection on 200px thumbnail (null until scored)
       faces: 2,              // face count (null until face detection added, post-MVP)
@@ -165,12 +165,15 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
   │
   ▼ [Thumbnail Generation — Web Worker, OffscreenCanvas]
   │   Only processes SELECTED photos (those in chapters)
-  │   Two tiers:
-  │     200px JPEG — all selected photos (quality scoring, ML, mobile render)
-  │     400px JPEG — hero photos on desktop only (large featured image)
+  │   Two tiers from a single decode:
+  │     1000px JPEG — all selected photos (slideshow renderer; phone-frame
+  │                    is up to ~500×1080 on desktop so 200px source blurred)
+  │     200px JPEG  — derived by downscaling the hero canvas; used by
+  │                    debug surfaces and as the variance source (the
+  │                    qualityScore sigmoid is calibrated at 200px)
   │   HEIC: attempt createImageBitmap(); on failure mark thumbnailFailed,
   │         continue pipeline, surface count to UI
-  │   Memory: ~120 selected × 12KB + ~6 heroes × 40KB ≈ 1.7MB typical trip
+  │   Memory: ~120 selected × (~150KB hero + ~12KB std) ≈ 19MB typical trip
   │
   ▼ [Quality Scoring — blur detection on 200px thumbnails]
   │   Laplacian variance on canvas — no ML model needed
@@ -197,15 +200,14 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 | Tier | Resolution | Size | Used for |
 |---|---|---|---|
 | Ephemeral micro | 16px | discarded | Perceptual hash only |
-| Standard | 200px | ~12KB | Quality scoring, all ML models, mobile render, desktop non-hero |
-| Hero (desktop) | 400px | ~40KB | Large featured image per chapter on desktop |
+| Standard | 200px | ~12KB | Quality scoring, debug surfaces, fallback when hero failed |
+| Hero | 1000px | ~150KB | Slideshow renderer (PhotoCardFrame, ChapterDividerFrame) |
 
 **Estimated RAM at steady state (typical 500-photo trip, ~120 selected):**
 - 120 selected × 12KB (200px) = ~1.4MB
-- 6 heroes × 40KB (400px, desktop) = ~240KB
-- **Total: ~1.7MB** — memory is no longer a concern at typical trip sizes
-
-**Adaptive resolution detection:** `navigator.userAgentData.mobile` with `window.innerWidth < 768` as fallback. Mobile devices receive 200px thumbnails only; no 400px tier generated.
+- 120 selected × 150KB (1000px hero) = ~18MB
+- **Total: ~19MB** — the slideshow needs ~500px wide × ~1080 tall on desktop;
+  200px alone was visibly blurry. Both tiers come from a single decode.
 
 ---
 
@@ -243,7 +245,7 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 **PR 1C: Expensive pipeline stages** **[done]**
 - `stages/heroSelect.js` — survey-weighted selection (runs before thumbnail gen)
 - `stages/chapterBuilder.js` — selects which photos appear in story; output drives thumbnail generation
-- `stages/thumbnail.js` — OffscreenCanvas; selected photos only; 200px standard. Laplacian variance is computed inline from the same canvas pass and stashed on `photo._rawVariance` so `qualityScoreStage` can skip a second decode. (Runs on main thread; worker hoist is a later follow-up.)
+- `stages/thumbnail.js` — OffscreenCanvas; selected photos only. Decodes once at 1000px (hero, used by the slideshow renderer), downscales to 200px (standard, used by debug surfaces + variance source). Laplacian variance is computed inline on the 200px canvas — the qualityScore sigmoid is calibrated at that resolution — and stashed on `photo._rawVariance` so `qualityScoreStage` can skip a second decode. (Runs on main thread; worker hoist is a later follow-up.)
 - `stages/qualityScore.js` — normalises pre-computed Laplacian variance to a 0–1 score (fast path); falls back to decoding the 200px thumbnail if variance isn't stashed
 - `lib/pipeline/concurrency.js` — small `parallelMap` helper used by dedup / thumbnail / qualityScore to run ~4 photos in flight at once instead of one-at-a-time
 - `lib/validateSkeleton.js` — `isValidSkeleton(json)` schema validator; used in tests and in dev-mode runtime assertions
@@ -258,12 +260,12 @@ Post-MVP: replace with free-text input interpreted by LLM agent (PR 5A)
 Testing in April 2026 surfaced that the new pipeline feels noticeably slower than the pre-Phase 1 impl. Reasons, with what we've already done and what's still open:
 
 - *Work per photo roughly tripled.* Old impl: 1 decode (thumbnail). New impl: byte-hash (dedup pass 1), 16×16 decode (dedup pass 2), 200px decode (thumbnail), Laplacian pass (quality). Most of this is new capability (dedup, blur scoring) not pure overhead, so the fix is to run it more efficiently rather than cut features.
-- *Mitigations shipped:* `parallelMap` with concurrency 4 on dedup / thumbnail / qualityScore; Laplacian variance computed inline on the thumbnail canvas (saves one decode per photo); 400px hero tier disabled for MVP.
+- *Mitigations shipped:* `parallelMap` with concurrency 4 on dedup / thumbnail / qualityScore; Laplacian variance computed inline on the thumbnail canvas (saves one decode per photo); both thumbnail tiers (1000px hero + 200px standard) derive from a single decode rather than redecoding.
 - *Still on the table:*
   - Hoist thumbnail + dedup into a Web Worker — today everything but EXIF runs on the main thread, which both blocks React and cannot exploit a second core beyond what `parallelMap` gets from async I/O interleaving.
-  - Merge dedup pass 2 (perceptual hash) with thumbnail decode — we decode each file twice today (16×16 for aHash, 200px for thumbnail). Combining into one decode + two resizes would roughly halve decode cost across the two stages.
+  - Merge dedup pass 2 (perceptual hash) with thumbnail decode — we decode each file twice today (16×16 for aHash, 1000px for thumbnail). Combining into one decode + two resizes would roughly halve decode cost across the two stages.
   - Revisit `qualityScore` placement — since it's now free when thumbnail ran successfully, we could fold it into the thumbnail stage entirely and drop the separate stage, or keep it for architectural clarity. Not urgent; flagged for when we revisit stages.
-  - Re-enable 400px hero tier only for the slideshow cover/divider frames, not every hero, once we know what the renderer actually needs.
+  - Generate the hero tier only for photos that the slideshow actually shows (heroes + divider top/bottom + photo-card slots) rather than every photo in `selectedPhotos`. Burst candidates in particular are in the photos map but never rendered.
   - Benchmark a typical 500-photo trip on a mid-range Android to confirm the pool size (4) is right — it's a guess, not measured.
 
 **Integration** **[done]**
