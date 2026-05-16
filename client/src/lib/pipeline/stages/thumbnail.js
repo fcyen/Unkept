@@ -4,15 +4,17 @@
  * Pipeline stage signature:
  *   ({ chapters, photos }: ChapterBuilderOutput, options, onProgress) => { chapters, photos }
  *
- * For each selected photo:
- * - Generates a 200px JPEG data URL (standard tier)
- * - Pre-computes Laplacian variance from the same canvas pass so
- *   qualityScore doesn't have to decode the thumbnail a second time.
+ * For each selected photo we produce two tiers from a single decode:
+ * - thumbnailHeroUrl: 1000px JPEG, used by the slideshow renderer. The
+ *   phone-frame in SlideshowPlayer is ~500×1080 on a desktop 1080p
+ *   display, so a 200px source visibly blurred when scaled up.
+ * - thumbnailUrl: 200px JPEG, derived by downscaling the hero canvas.
+ *   Used for pipeline-debug surfaces and as the variance source: the
+ *   quality-score sigmoid is calibrated at 200px so we keep the
+ *   Laplacian pass on the 200px canvas to preserve scores.
  *
- * The 400px hero tier is currently disabled for MVP (it doubled the
- * decode cost for every chapter hero with limited visible payoff). The
- * plumbing stays so we can re-enable when the slideshow-native renderer
- * needs it.
+ * Only one createImageBitmap decode per photo — the standard canvas is
+ * drawn from the hero canvas, not redecoded.
  *
  * Uses OffscreenCanvas on the main thread (worker version is a later
  * follow-up). HEIC: attempts createImageBitmap(); on failure marks
@@ -22,6 +24,7 @@
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
 
 const STANDARD_SIZE = 200;
+const HERO_SIZE = 1000;
 const JPEG_QUALITY = 0.7;
 
 /**
@@ -56,6 +59,36 @@ async function decodeToCanvas(file, maxSize) {
   bitmap.close();
 
   return { canvas, ctx, width, height };
+}
+
+/**
+ * Downscale an existing canvas into a new one bounded by `maxSize` on
+ * its longest side. Returns the original canvas if it already fits
+ * (avoids an unnecessary draw + allocation for small source images).
+ */
+function downscaleCanvas(sourceCanvas, maxSize) {
+  const sw = sourceCanvas.width;
+  const sh = sourceCanvas.height;
+  let dw = sw;
+  let dh = sh;
+  if (sw > sh) {
+    if (sw > maxSize) {
+      dh = Math.round((sh * maxSize) / sw);
+      dw = maxSize;
+    }
+  } else {
+    if (sh > maxSize) {
+      dw = Math.round((sw * maxSize) / sh);
+      dh = maxSize;
+    }
+  }
+  if (dw === sw && dh === sh) {
+    return { canvas: sourceCanvas, ctx: sourceCanvas.getContext('2d'), width: dw, height: dh };
+  }
+  const canvas = new OffscreenCanvas(dw, dh);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(sourceCanvas, 0, 0, dw, dh);
+  return { canvas, ctx, width: dw, height: dh };
 }
 
 /**
@@ -139,8 +172,8 @@ export async function thumbnailStage(input, options = {}, onProgress) {
     entries,
     concurrency,
     async ([, photo]) => {
-      const decoded = await decodeToCanvas(photo.file, STANDARD_SIZE);
-      if (!decoded) {
+      const hero = await decodeToCanvas(photo.file, HERO_SIZE);
+      if (!hero) {
         photo.thumbnailFailed = true;
         photo.thumbnailUrl = null;
         photo.thumbnailHeroUrl = null;
@@ -148,13 +181,17 @@ export async function thumbnailStage(input, options = {}, onProgress) {
         return;
       }
 
-      // Pull imageData before the JPEG encode so the canvas's pixels are
-      // still hot — this avoids a separate decode/getImageData pass in
-      // qualityScore.
-      const imageData = decoded.ctx.getImageData(0, 0, decoded.width, decoded.height);
+      // Standard tier is derived from the hero canvas — one decode, two
+      // sizes. Variance must come from the 200px canvas because the
+      // qualityScore sigmoid is calibrated to that resolution.
+      const standard = downscaleCanvas(hero.canvas, STANDARD_SIZE);
+      const imageData = standard.ctx.getImageData(0, 0, standard.width, standard.height);
       photo._rawVariance = laplacianVariance(imageData);
-      photo.thumbnailUrl = await canvasToDataUrl(decoded.canvas);
-      photo.thumbnailHeroUrl = null; // 400px tier disabled for MVP
+      photo.thumbnailUrl = await canvasToDataUrl(standard.canvas);
+      photo.thumbnailHeroUrl =
+        standard.canvas === hero.canvas
+          ? photo.thumbnailUrl
+          : await canvasToDataUrl(hero.canvas);
     },
     onProgress,
   );

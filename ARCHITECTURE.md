@@ -46,7 +46,7 @@ Deployable as a static site.
 │       │   │       ├── cluster.js        # Day-based clustering (swappable)
 │       │   │       ├── heroSelect.js     # Hero picker (swappable)
 │       │   │       ├── chapterBuilder.js # Selects photos + assembles chapters
-│       │   │       ├── thumbnail.js      # 200px JPEG data URLs (+ inline variance)
+│       │   │       ├── thumbnail.js      # 1000px hero + 200px standard JPEGs (single decode)
 │       │   │       └── qualityScore.js   # Laplacian variance → 0–1 score
 │       │   └── workers/
 │       │       └── exif.worker.js        # EXIF extraction in a Web Worker
@@ -127,12 +127,15 @@ Files[] (user upload)
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  6. Thumbnail Generation (OffscreenCanvas, concurrency 4)        │
-│     - Decode → resize to 200px max → JPEG data URL               │
-│     - Inline Laplacian variance on the same canvas pass;         │
+│     - Decode once → 1000px hero canvas; downscale to 200px       │
+│       standard canvas. Encode both to JPEG data URLs.            │
+│     - Hero tier feeds the slideshow renderer; standard tier is   │
+│       used by debug surfaces and quality scoring.                │
+│     - Inline Laplacian variance on the 200px canvas (the         │
+│       qualityScore sigmoid is calibrated at that resolution);    │
 │       stashed on `photo._rawVariance` for qualityScore to reuse  │
-│     - 400px hero tier disabled for MVP (plumbing retained)       │
 │     - HEIC: graceful degradation (`thumbnailFailed: true`)       │
-│     Output: photos mutated with thumbnailUrl                     │
+│     Output: photos mutated with thumbnailUrl + thumbnailHeroUrl  │
 └──────────────────────────┬───────────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
@@ -210,8 +213,8 @@ Carried between stages. Has a live `file: File` reference until thumbnails are g
   file: File,                              // present only during Phase 1
   timestamp: "2025-03-15T08:30:00Z" | null,
   coords: { lat: 35.6762, lng: 139.6503 } | null,
-  thumbnailUrl: "data:image/jpeg;base64,…" | null,
-  thumbnailHeroUrl: null,                  // 400px tier disabled for MVP
+  thumbnailUrl: "data:image/jpeg;base64,…" | null,        // 200px
+  thumbnailHeroUrl: "data:image/jpeg;base64,…" | null,    // 1000px (slideshow)
   thumbnailFailed: false,
   qualityScore: 0.0–1.0 | null,
   faces: null,
