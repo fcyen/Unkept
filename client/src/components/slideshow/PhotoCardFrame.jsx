@@ -98,7 +98,7 @@ function Portrait1({ items }) {
   const p = items[0];
   if (!p) return null;
   return (
-    <div className="absolute inset-0 bg-black p-1">
+    <div className="absolute inset-0 grid bg-black p-1">
       <Cell photo={p} animation="fade-up" delayMs={0} />
     </div>
   );
