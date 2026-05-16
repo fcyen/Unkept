@@ -13,7 +13,7 @@
  * If the server is unreachable, all embeddings are null and the stage warns
  * to the console — the pipeline continues with time-based clustering.
  *
- * Server must be running at http://localhost:8000 (see docs/ai-embedding-server.md).
+ * Server must be running at http://localhost:8000 (see docs/ai-server.md).
  */
 
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';

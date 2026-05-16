@@ -42,7 +42,7 @@ const FRAME_DURATION = {
 const HOLD_THRESHOLD_MS = 300;
 const EXIT_ANIM_MS = 400;
 
-export default function SlideshowPlayer({ story, onExit }) {
+export default function SlideshowPlayer({ story, captions, onExit }) {
   const frames = story.frames;
   const photos = story.skeleton.photos;
 
@@ -243,7 +243,13 @@ export default function SlideshowPlayer({ story, onExit }) {
           />
         );
       case 'photoCard':
-        return <PhotoCardFrame frame={currentFrame} photos={photos} />;
+        return (
+          <PhotoCardFrame
+            frame={currentFrame}
+            photos={photos}
+            caption={captions?.[currentFrame.chapterId]}
+          />
+        );
       case 'coda':
         return (
           <CodaFrame
@@ -255,7 +261,7 @@ export default function SlideshowPlayer({ story, onExit }) {
       default:
         return null;
     }
-  }, [currentFrame, photos, exiting, status, startPlayback, replay]);
+  }, [currentFrame, photos, exiting, status, startPlayback, replay, captions]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none">

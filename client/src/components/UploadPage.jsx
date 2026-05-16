@@ -46,11 +46,28 @@ const STAGE_PHRASES = {
 const STARTING_PHRASES = ['Warming up', 'Getting started'];
 const PHRASE_INTERVAL_MS = 1800;
 
+const CAPTIONS_PREF_KEY = 'unkept.captionsEnabled';
+
+function readCaptionsPref() {
+  try {
+    return window.localStorage.getItem(CAPTIONS_PREF_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeCaptionsPref(enabled) {
+  try {
+    window.localStorage.setItem(CAPTIONS_PREF_KEY, enabled ? 'true' : 'false');
+  } catch { /* ignore */ }
+}
+
 export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
   const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
   const [geocodingProgress, setGeocodingProgress] = useState(null);
+  const [captionsEnabled, setCaptionsEnabled] = useState(readCaptionsPref);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
 
@@ -86,13 +103,13 @@ export default function UploadPage({ onStoryReady }) {
         setPreviews([]);
         setPhotos([]);
 
-        onStoryReady(story);
+        onStoryReady(story, { captionsEnabled });
       } catch (err) {
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
       }
     })();
-  }, [pipeline.result, previews, onStoryReady]);
+  }, [pipeline.result, previews, onStoryReady, captionsEnabled]);
 
   useEffect(() => {
     if (pipeline.error) setError(pipeline.error.message || 'Pipeline failed.');
@@ -209,11 +226,20 @@ export default function UploadPage({ onStoryReady }) {
         {photos.length > 0 && !processing && (
           <button
             onClick={(e) => { e.stopPropagation(); clearPhotos(); }}
-            className="font-sans text-xs text-muted hover:text-ink tracking-wide mb-8 block"
+            className="font-sans text-xs text-muted hover:text-ink tracking-wide mb-4 block"
           >
             Clear all photos
           </button>
         )}
+
+        <CaptionsToggle
+          enabled={captionsEnabled}
+          disabled={processing}
+          onChange={(next) => {
+            setCaptionsEnabled(next);
+            writeCaptionsPref(next);
+          }}
+        />
 
         {error && (
           <div className="border border-red-300 bg-red-50 p-3 mb-6">
@@ -229,6 +255,36 @@ export default function UploadPage({ onStoryReady }) {
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Captions opt-in toggle. Off by default: enabling sends chapter hero
+ * thumbnails to the local server, which proxies to Claude. Preference is
+ * persisted in localStorage so a returning user doesn't have to re-opt-in.
+ */
+function CaptionsToggle({ enabled, disabled, onChange }) {
+  return (
+    <label
+      className={`flex items-start gap-3 mb-6 cursor-pointer select-none ${
+        disabled ? 'opacity-50 pointer-events-none' : ''
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 accent-ink"
+      />
+      <span className="font-sans text-xs text-muted leading-relaxed">
+        <span className="text-ink">Generate AI captions</span>
+        <span className="block text-faint mt-0.5">
+          Sends each chapter's hero thumbnail to a local server that proxies to Claude.
+          Full-resolution photos never leave your device.
+        </span>
+      </span>
+    </label>
   );
 }
 
