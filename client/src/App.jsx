@@ -1,8 +1,10 @@
 import { lazy, Suspense, useState } from 'react';
 import UploadPage from './components/UploadPage.jsx';
 import SlideshowPlayer from './components/slideshow/SlideshowPlayer.jsx';
+import CurationScreen from './components/curation/CurationScreen.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
+import { buildStory, applyGeocoding } from './lib/storyBuilder.js';
 
 // Debug routes are lazy-imported and only resolved when MODE === 'debug'.
 // Vite replaces import.meta.env.MODE with a literal string at build time,
@@ -24,8 +26,40 @@ const isPipelineRoute = isDebugMode && (
 // Run once at module load — gate the app before any pipeline code runs.
 const compatibility = checkCompatibility();
 
+// Re-derive a Story from the curated set: filter each chapter's photoIds
+// down to what the user kept, replay buildStory + applyGeocoding so the
+// slideshow renders only kept photos.
+function curateStory(story, keptIds) {
+  const keptSet = new Set(keptIds);
+  const sk = story.skeleton;
+  const filteredChapters = sk.chapters
+    .map((ch) => {
+      const photoIds = ch.photoIds.filter((id) => keptSet.has(id));
+      const heroPhotoId = keptSet.has(ch.heroPhotoId) ? ch.heroPhotoId : photoIds[0];
+      return { ...ch, photoIds, heroPhotoId };
+    })
+    .filter((ch) => ch.photoIds.length > 0);
+
+  const filteredSkeleton = { ...sk, chapters: filteredChapters };
+  let curated = buildStory(filteredSkeleton);
+
+  // Reuse the geocoding already applied to the original story so we don't
+  // need a second network round-trip just because the user pruned photos.
+  const chapterLocations = {};
+  let country = null;
+  for (const ch of story.chapters) {
+    if (ch.location) chapterLocations[ch.id] = ch.location;
+    if (ch.location?.country) country = ch.location.country;
+  }
+  if (Object.keys(chapterLocations).length > 0) {
+    curated = applyGeocoding(curated, { chapterLocations, country });
+  }
+  return curated;
+}
+
 export default function App() {
   const [story, setStory] = useState(null);
+  const [curated, setCurated] = useState(null);
 
   if (isPipelineRoute) {
     return <Suspense fallback={null}><PipelineDebugRoute /></Suspense>;
@@ -39,8 +73,23 @@ export default function App() {
     return <CompatibilityBlock checks={compatibility.checks} />;
   }
 
+  if (curated) {
+    return (
+      <SlideshowPlayer
+        story={curated}
+        onExit={() => { setCurated(null); setStory(null); }}
+      />
+    );
+  }
+
   if (story) {
-    return <SlideshowPlayer story={story} onExit={() => setStory(null)} />;
+    return (
+      <CurationScreen
+        story={story}
+        onBack={() => setStory(null)}
+        onComplete={({ keptIds }) => setCurated(curateStory(story, keptIds))}
+      />
+    );
   }
 
   return <UploadPage onStoryReady={setStory} />;
