@@ -19,6 +19,17 @@ export function checkCompatibility() {
   };
 }
 
+/**
+ * True when running on iOS. Covers iPhones, iPods, and iPads (including
+ * iPad OS 13+ which reports MacIntel but exposes touch points).
+ */
+export function isIOS() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
 export const CHECK_LABELS = {
   webWorkers: 'Web Workers',
   offscreenCanvas: 'OffscreenCanvas',
