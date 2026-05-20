@@ -47,8 +47,10 @@ export default function MainPhoto({
   const bg = photo.thumbnailHeroUrl || photo.thumbnailUrl
     ? {
       backgroundImage: `url(${photo.thumbnailHeroUrl || photo.thumbnailUrl})`,
-      backgroundSize: 'cover',
+      backgroundSize: 'contain',
       backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+      backgroundColor: '#0F0D0B',
     }
     : { background: photo.grad || 'linear-gradient(150deg,#3d2a20,#6a4530,#b07a4f)' };
 

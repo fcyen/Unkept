@@ -172,8 +172,10 @@
 .curation-tile .ph {
   position: absolute;
   inset: 0;
-  background-size: cover;
+  background-size: contain;
   background-position: center;
+  background-repeat: no-repeat;
+  background-color: #0F0D0B;
 }
 .curation-tile .ts {
   position: absolute;

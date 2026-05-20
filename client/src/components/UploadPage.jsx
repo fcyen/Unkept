@@ -226,6 +226,7 @@ export default function UploadPage({ onStoryReady }) {
           pipeline={pipeline}
           geocodingProgress={geocodingProgress}
           onClick={handleGenerate}
+          hasPhotos={photos.length > 0}
         />
       </div>
     </div>
@@ -237,7 +238,7 @@ export default function UploadPage({ onStoryReady }) {
  * timer so the UI feels alive even when a stage holds the main thread for
  * a few seconds.
  */
-function ProgressButton({ processing, pipeline, geocodingProgress, onClick }) {
+function ProgressButton({ processing, pipeline, geocodingProgress, onClick, hasPhotos }) {
   const stage = geocodingProgress
     ? 'geocoding'
     : pipeline.progress?.stage || (processing ? 'starting' : null);
@@ -246,7 +247,7 @@ function ProgressButton({ processing, pipeline, geocodingProgress, onClick }) {
 
   let label;
   if (!processing) {
-    label = 'Generate Story';
+    label = 'Start curating';
   } else if (geocodingProgress) {
     const { done, total } = geocodingProgress;
     label = `Resolving locations… ${done}/${total}`;
@@ -259,7 +260,7 @@ function ProgressButton({ processing, pipeline, geocodingProgress, onClick }) {
   return (
     <button
       onClick={onClick}
-      disabled={processing}
+      disabled={processing || !hasPhotos}
       className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"
     >
       <span
