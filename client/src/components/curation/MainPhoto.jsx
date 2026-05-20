@@ -44,9 +44,11 @@ export default function MainPhoto({
   const tilt = progress * 3;
   const scale = 1 - Math.abs(progress) * 0.04;
 
-  const bg = photo.thumbnailHeroUrl || photo.thumbnailUrl
+  const heroUrl = photo.thumbnailHeroUrl || photo.thumbnailUrl;
+  const hasThumb = !!heroUrl;
+  const bg = hasThumb
     ? {
-      backgroundImage: `url(${photo.thumbnailHeroUrl || photo.thumbnailUrl})`,
+      backgroundImage: `url(${heroUrl})`,
       backgroundSize: 'contain',
       backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat',
@@ -83,6 +85,34 @@ export default function MainPhoto({
           background: 'radial-gradient(120% 80% at 30% 30%, rgba(255,255,255,0.10), transparent 55%), radial-gradient(120% 80% at 80% 90%, rgba(0,0,0,0.30), transparent 60%)',
           pointerEvents: 'none',
         }} />
+
+        {!hasThumb && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            color: 'rgba(244,239,230,0.7)',
+            pointerEvents: 'none', gap: 10, padding: 20, textAlign: 'center',
+          }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M3 16l5-5 4 4 3-3 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="15" cy="9" r="1.5" fill="currentColor" />
+              <path d="M4 4l16 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <div style={{
+              fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase',
+              fontFamily: 'Geist Mono, monospace',
+            }}>Preview unavailable</div>
+            {photo.name && (
+              <div style={{
+                fontSize: 10, color: 'var(--paper-dim)',
+                fontFamily: 'Geist Mono, monospace',
+                wordBreak: 'break-all', maxWidth: '80%',
+              }}>{photo.name}</div>
+            )}
+          </div>
+        )}
 
         {photo.ts && (
           <div className="mono" style={{
