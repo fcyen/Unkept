@@ -96,7 +96,7 @@ export default function MainPhoto({
 
         {isStarter && !kept && (
           <div style={{
-            position: 'absolute', right: 10, top: 10,
+            position: 'absolute', left: 10, top: 10,
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '5px 9px',
             background: 'rgba(26,23,20,0.55)',
@@ -115,38 +115,56 @@ export default function MainPhoto({
           </div>
         )}
 
-        {kept && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onUnkeep && onUnkeep(); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute', right: 12, top: 12,
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '6px 10px 6px 9px',
-              background: 'var(--accent)', color: '#1A1714',
-              borderRadius: 999, fontSize: 10, fontWeight: 700,
-              letterSpacing: '0.08em', textTransform: 'uppercase',
-              boxShadow: '0 4px 10px rgba(255,106,44,0.35)',
-              border: 0, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-            aria-label="Remove from kept"
-            title="Tap to remove"
-          >
-            <svg width="11" height="9" viewBox="0 0 12 10" fill="none">
-              <path d="M1 5l3.5 3.5L11 1.5" stroke="#1A1714" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Kept
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              marginLeft: 2, width: 14, height: 14, borderRadius: '50%',
-              background: 'rgba(26,23,20,0.20)',
-            }}>
-              <svg width="7" height="7" viewBox="0 0 8 8" fill="none">
-                <path d="M2 2l4 4M6 2l-4 4" stroke="#1A1714" strokeWidth="1.6" strokeLinecap="round" />
+        {/* Top-right toggle — always present. Tap to keep / remove. */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (kept) onUnkeep && onUnkeep();
+            else onKeep && onKeep();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label={kept ? 'Remove from kept' : 'Keep this photo'}
+          title={kept ? 'Tap to remove' : 'Tap to keep'}
+          style={{
+            position: 'absolute', right: 12, top: 12,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 11px 6px 9px',
+            background: kept ? 'var(--accent)' : 'rgba(26,23,20,0.55)',
+            backdropFilter: kept ? 'none' : 'blur(8px)',
+            WebkitBackdropFilter: kept ? 'none' : 'blur(8px)',
+            color: kept ? '#1A1714' : 'var(--paper)',
+            borderRadius: 999, fontSize: 10, fontWeight: 700,
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+            boxShadow: kept ? '0 4px 10px rgba(255,106,44,0.35)' : 'none',
+            border: kept ? 0 : '0.5px solid rgba(244,239,230,0.30)',
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          {kept ? (
+            <>
+              <svg width="11" height="9" viewBox="0 0 12 10" fill="none">
+                <path d="M1 5l3.5 3.5L11 1.5" stroke="#1A1714" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-            </span>
-          </button>
-        )}
+              Kept
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                marginLeft: 2, width: 14, height: 14, borderRadius: '50%',
+                background: 'rgba(26,23,20,0.20)',
+              }}>
+                <svg width="7" height="7" viewBox="0 0 8 8" fill="none">
+                  <path d="M2 2l4 4M6 2l-4 4" stroke="#1A1714" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </span>
+            </>
+          ) : (
+            <>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              Keep
+            </>
+          )}
+        </button>
 
         {progress > 0 && !kept && (
           <div style={{
