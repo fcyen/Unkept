@@ -30,8 +30,10 @@ function buildViewModel(story) {
       ? Math.max(1, Math.round((chapterPhotoIds.length / totalPhotos) * surveyTarget))
       : Math.min(8, Math.max(1, Math.round(chapterPhotoIds.length * 0.2)));
     const fromStory = story.chapters?.[i];
-    const name = fromStory?.title || fromStory?.location?.label || `Chapter ${i + 1}`;
-    const sub = fromStory?.subtitle || `Day ${i + 1}`;
+    // sub = "Day N" tag; name = location label only when geocoding resolved.
+    // When there's no location we render the day alone (no "Day 1 · Day 1").
+    const sub = `Day ${fromStory?.dayIndex || i + 1}`;
+    const name = fromStory?.location?.label || '';
     const starter = ch.heroPhotoId ? [ch.heroPhotoId] : chapterPhotoIds.slice(0, 1);
     return {
       id: ch.id,
@@ -190,7 +192,9 @@ export default function CurationScreen({ story, onComplete, onBack }) {
             {tripName}{dateLabel ? ` · ${dateLabel}` : ''}
           </div>
           <div className="chapter-title serif">
-            {chapter.sub} <em>·</em> {chapter.name}
+            {chapter.name
+              ? <>{chapter.sub} <em>·</em> {chapter.name}</>
+              : chapter.sub}
           </div>
           <ProgressBar kept={totalKept} target={totalTarget} streak={streak} />
         </div>
