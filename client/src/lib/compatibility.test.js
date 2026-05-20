@@ -43,25 +43,18 @@ describe('checkCompatibility', () => {
     expect(result.passed).toBe(false);
   });
 
-  it('fails when fewer than 2 cores are reported', () => {
-    stubNavigator({ hardwareConcurrency: 1, deviceMemory: 8 });
+  it('fails when fewer than 4 cores are reported', () => {
+    stubNavigator({ hardwareConcurrency: 2, deviceMemory: 8 });
     const result = checkCompatibility();
     expect(result.checks.minCores).toBe(false);
     expect(result.passed).toBe(false);
   });
 
-  it('passes when 2 cores are reported (privacy browsers cap here)', () => {
-    stubNavigator({ hardwareConcurrency: 2, deviceMemory: 8 });
-    const result = checkCompatibility();
-    expect(result.checks.minCores).toBe(true);
-    expect(result.passed).toBe(true);
-  });
-
-  it('passes the core check when hardwareConcurrency is unreported (like deviceMemory)', () => {
+  it('fails when hardwareConcurrency is missing', () => {
     stubNavigator({ hardwareConcurrency: undefined, deviceMemory: 8 });
     const result = checkCompatibility();
-    expect(result.checks.minCores).toBe(true);
-    expect(result.passed).toBe(true);
+    expect(result.checks.minCores).toBe(false);
+    expect(result.passed).toBe(false);
   });
 
   it('fails when deviceMemory is reported below 4 GB', () => {
