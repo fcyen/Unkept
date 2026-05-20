@@ -4,12 +4,16 @@
  *
  * deviceMemory is only exposed in Chromium (~85% of browsers); a missing value
  * is treated as a pass rather than a fail to avoid blocking Safari/Firefox.
+ *
+ * hardwareConcurrency is treated the same way: privacy browsers (e.g. Brave on iOS)
+ * cap the value at 2 regardless of actual hardware, so missing = pass and the
+ * threshold is 2 rather than 4.
  */
 export function checkCompatibility() {
   const checks = {
     webWorkers: typeof Worker !== 'undefined',
     offscreenCanvas: typeof OffscreenCanvas !== 'undefined',
-    minCores: (navigator.hardwareConcurrency || 0) >= 4,
+    minCores: !navigator.hardwareConcurrency || navigator.hardwareConcurrency >= 2,
     minMemory: !navigator.deviceMemory || navigator.deviceMemory >= 4,
   };
 
@@ -22,6 +26,6 @@ export function checkCompatibility() {
 export const CHECK_LABELS = {
   webWorkers: 'Web Workers',
   offscreenCanvas: 'OffscreenCanvas',
-  minCores: 'At least 4 CPU cores',
+  minCores: 'At least 2 CPU cores',
   minMemory: 'At least 4 GB of memory',
 };
