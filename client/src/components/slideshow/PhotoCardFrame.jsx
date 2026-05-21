@@ -10,27 +10,52 @@
  * Photos animate in with staggered delays so the frame feels composed
  * rather than loaded. Duration: ~4.5s (owner: SlideshowPlayer).
  *
- * Captions are out of MVP — text lives on chapter dividers only.
- * See PHASE-2-DESIGN-INTENT.md.
+ * AI captions (PR3A) appear as a bottom overlay when the user opted in
+ * on the upload page. The caption streams in over the lifetime of the
+ * frame and gracefully degrades to nothing when captions are off or
+ * the request errored.
  */
 
-export default function PhotoCardFrame({ frame, photos }) {
+export default function PhotoCardFrame({ frame, photos, caption }) {
   const { layout, photoIds } = frame;
   const items = photoIds.map((id) => photos[id]).filter(Boolean);
 
+  let body;
   switch (layout) {
-    case 'landscape-3':
-      return <Landscape3 items={items} />;
-    case 'portrait-4':
-      return <Portrait4 items={items} />;
-    case 'mixed-2p-1l':
-      return <Mixed2p1l items={items} frame={frame} />;
-    case 'landscape-2':
-      return <Landscape2 items={items} />;
+    case 'landscape-3':  body = <Landscape3 items={items} />; break;
+    case 'portrait-4':   body = <Portrait4 items={items} />; break;
+    case 'mixed-2p-1l':  body = <Mixed2p1l items={items} frame={frame} />; break;
+    case 'landscape-2':  body = <Landscape2 items={items} />; break;
     case 'portrait-1':
-    default:
-      return <Portrait1 items={items} />;
+    default:             body = <Portrait1 items={items} />;
   }
+
+  return (
+    <>
+      {body}
+      <CaptionOverlay caption={caption} />
+    </>
+  );
+}
+
+function CaptionOverlay({ caption }) {
+  if (!caption) return null;
+  if (caption.status === 'error') return null;
+  const text = caption.text?.trim();
+  if (!text) return null;
+
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none">
+      <div className="bg-gradient-to-t from-black/80 via-black/50 to-transparent px-6 pt-12 pb-6">
+        <p className="font-serif text-white text-lg md:text-xl leading-snug animate-fade-up">
+          {text}
+          {caption.status === 'streaming' && (
+            <span className="inline-block w-[0.5em] h-[1em] align-text-bottom ml-1 bg-white/70 animate-pulse" />
+          )}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 // --- Layouts ---------------------------------------------------------------

@@ -7,7 +7,8 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ```
 /  (repo root)
   client/       React + Vite + Tailwind (all active development)
-  server/       Express stub (Phase 3, not in active development)
+  server/       Local FastAPI: /embed (CLIP, Phase 1) + /caption (Claude, Phase 3 opt-in)
+  docs/ai-server.md      Server setup and API reference
   EXECUTIVE-SUMMARY.md   Product overview
   MVP.md                 MVP feature scope and quality bar
   ARCHITECTURE.md        System design
@@ -61,3 +62,13 @@ cd client
 npm install
 npm run dev
 ```
+
+For the optional AI features (semantic clustering, AI captions):
+```
+cd server
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+ANTHROPIC_API_KEY=sk-ant-...  uvicorn main:app --port 8000 --reload
+```
+See `docs/ai-server.md` for details. The client falls back gracefully when
+the server is offline or `ANTHROPIC_API_KEY` is unset.
