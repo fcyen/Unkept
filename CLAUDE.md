@@ -7,7 +7,10 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ```
 /  (repo root)
   client/       React + Vite + Tailwind (all active development)
-  server/       Express stub (Phase 3, not in active development)
+  server/       Opt-in backend — neither service is on the live MVP path:
+    index.js, routes/   Express itinerary-matching stub (Phase 3, not in active development)
+    embed/              FastAPI CLIP ViT-B/32 embedding server — local dev tool only, called by
+                        the embedding pipeline stage when semantic clustering is enabled (/pipeline)
   EXECUTIVE-SUMMARY.md   Product overview
   MVP.md                 MVP feature scope and quality bar
   ARCHITECTURE.md        System design
