@@ -145,6 +145,16 @@ export default function CurationScreen({ story, onComplete, onBack }) {
   const totalKept = kept.size;
   const totalTarget = chapters.reduce((s, c) => s + c.target, 0);
 
+  // Kept photos in chronological order — handed to the completion screen so
+  // the user can download the curated set.
+  const keptPhotos = useMemo(
+    () => [...kept]
+      .map((id) => photoById[id])
+      .filter(Boolean)
+      .sort((a, b) => (a.timestampMs || 0) - (b.timestampMs || 0)),
+    [kept, photoById],
+  );
+
   useEffect(() => {
     if (!showStarter) return;
     const t = setTimeout(() => setShowStarter(false), 4500);
@@ -258,6 +268,7 @@ export default function CurationScreen({ story, onComplete, onBack }) {
           target={totalTarget}
           chapterCount={chapters.length}
           tripName={tripName}
+          keptPhotos={keptPhotos}
           onContinue={() => {
             setShowCelebrate(false);
             onComplete && onComplete({ keptIds: [...kept] });
