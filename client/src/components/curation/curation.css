@@ -320,6 +320,23 @@
   font-family: inherit;
   box-shadow: 0 8px 28px rgba(255, 106, 44, 0.35);
 }
+.curation-celebrate .download {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: transparent;
+  color: var(--paper);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 0.5px solid rgba(244, 239, 230, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+}
 .curation-celebrate .ghost {
   margin-top: 14px;
   background: transparent;

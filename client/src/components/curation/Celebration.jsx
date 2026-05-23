@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { downloadCuratedPhotos } from '../../lib/curatedDownload.js';
 
 function Confetti() {
   const pieces = useMemo(
@@ -32,9 +33,13 @@ export default function Celebration({
   target,
   chapterCount,
   tripName,
+  keptPhotos = [],
   onContinue,
   onKeepRefining,
 }) {
+  const downloadable = keptPhotos.filter(
+    (p) => p.thumbnailHeroUrl || p.thumbnailUrl,
+  );
   return (
     <div className="curation-celebrate">
       <Confetti />
@@ -63,6 +68,24 @@ export default function Celebration({
           <path d="M3 1l9 6-9 6V1z" fill="#1A1714" />
         </svg>
       </button>
+      {downloadable.length > 0 && (
+        <button
+          className="download"
+          onClick={() => downloadCuratedPhotos(downloadable, tripName)}
+          type="button"
+        >
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <path
+              d="M7 1v8M3.5 6L7 9.5 10.5 6M2 12.5h10"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Download {downloadable.length} photo{downloadable.length === 1 ? '' : 's'}
+        </button>
+      )}
       <button className="ghost" onClick={onKeepRefining} type="button">
         Keep refining
       </button>
