@@ -126,21 +126,29 @@ export default function CurationScreen({ story, onComplete, onBack }) {
   const chapter = chapters.find((c) => c.id === chapterId) || firstChapter;
   const chapterPhotos = photosByChapter[chapter?.id] || [];
   const current = chapterPhotos[photoIdx];
-  const keptInChapter = chapterPhotos.filter((p) => kept.has(p.id));
+
+  // Photo→chapter index for slot clicks that jump across chapters.
+  const chapterIdByPhoto = useMemo(() => {
+    const m = {};
+    chapters.forEach((c) => { c.photoIds.forEach((id) => { m[id] = c.id; }); });
+    return m;
+  }, [chapters]);
+
+  // Kept photos grouped by chapter, each list in chapter order — fed to the
+  // BottomStrip so every chapter's selections are visible at a glance.
+  const keptPhotosByChapter = useMemo(() => {
+    const m = {};
+    chapters.forEach((c) => {
+      m[c.id] = (photosByChapter[c.id] || []).filter((p) => kept.has(p.id));
+    });
+    return m;
+  }, [kept, chapters, photosByChapter]);
 
   const keptByChapter = useMemo(() => {
     const m = {};
-    chapters.forEach((c) => { m[c.id] = 0; });
-    kept.forEach((id) => {
-      const p = photoById[id];
-      if (!p) return;
-      // Find which chapter this photo belongs to.
-      for (const c of chapters) {
-        if (c.photoIds.includes(id)) { m[c.id] = (m[c.id] || 0) + 1; break; }
-      }
-    });
+    chapters.forEach((c) => { m[c.id] = keptPhotosByChapter[c.id]?.length || 0; });
     return m;
-  }, [kept, chapters, photoById]);
+  }, [chapters, keptPhotosByChapter]);
 
   const totalKept = kept.size;
   const totalTarget = chapters.reduce((s, c) => s + c.target, 0);
@@ -184,6 +192,14 @@ export default function CurationScreen({ story, onComplete, onBack }) {
   const onSlotClick = (p) => {
     if (current.id === p.id) {
       toggle(p.id, false);
+      return;
+    }
+    const targetChapterId = chapterIdByPhoto[p.id];
+    if (targetChapterId && targetChapterId !== chapterId) {
+      const targetPhotos = photosByChapter[targetChapterId] || [];
+      const i = targetPhotos.findIndex((x) => x.id === p.id);
+      setChapterId(targetChapterId);
+      setPhotoIdx(Math.max(0, i));
       return;
     }
     const i = chapterPhotos.findIndex((x) => x.id === p.id);
@@ -244,8 +260,9 @@ export default function CurationScreen({ story, onComplete, onBack }) {
 
       <div className="curation-bottombar">
         <BottomStrip
-          kept={keptInChapter}
-          target={chapter.target}
+          chapters={chapters}
+          keptPhotosByChapter={keptPhotosByChapter}
+          currentChapterId={chapter.id}
           dropActive={dropHint === 'keep'}
           currentKept={kept.has(current.id) ? current.id : null}
           onSlotClick={onSlotClick}
