@@ -30,6 +30,12 @@ function compareByName(a, b) {
   return filenameOf(a).localeCompare(filenameOf(b), undefined, { numeric: true });
 }
 
+function getUtcDateKey(timestamp) {
+  const dt = new Date(timestamp);
+  if (Number.isNaN(dt.getTime())) return null;
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
 /**
  * Group photos by calendar date (YYYY-MM-DD).
  * Each day forms one cluster. Within each cluster, photos are sorted by time.
@@ -53,8 +59,11 @@ function clusterByDay(photos) {
   // Group by date string
   const byDate = new Map();
   for (const photo of dated) {
-    const dt = new Date(photo.timestamp);
-    const dateKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    const dateKey = getUtcDateKey(photo.timestamp);
+    if (!dateKey) {
+      undated.push(photo);
+      continue;
+    }
     if (!byDate.has(dateKey)) byDate.set(dateKey, []);
     byDate.get(dateKey).push(photo);
   }
@@ -157,4 +166,4 @@ export async function clusterStage(input, options = {}, onProgress) {
 }
 
 // Export individual strategies for direct use and testing
-export { clusterByDay, clusterByTimeGap };
+export { clusterByDay, clusterByTimeGap, getUtcDateKey };

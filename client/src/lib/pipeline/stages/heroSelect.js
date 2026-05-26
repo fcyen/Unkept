@@ -89,7 +89,8 @@ function getClusterDate(cluster) {
   for (const photo of cluster) {
     if (photo.timestamp) {
       const dt = new Date(photo.timestamp);
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      if (Number.isNaN(dt.getTime())) continue;
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
     }
   }
   return null;

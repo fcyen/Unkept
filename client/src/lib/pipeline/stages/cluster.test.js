@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clusterByDay, clusterByTimeGap, clusterStage } from './cluster.js';
+import { clusterByDay, clusterByTimeGap, clusterStage, getUtcDateKey } from './cluster.js';
 
 function makePhoto(id, timestamp, coords = null) {
   return { id, name: `${id}.jpg`, timestamp, coords, file: null };
@@ -95,6 +95,10 @@ describe('clusterByDay', () => {
 
     expect(clusters).toHaveLength(1);
     expect(clusters[0].map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  it('uses UTC dates instead of the local runtime timezone', () => {
+    expect(getUtcDateKey('2025-03-16T18:00:00Z')).toBe('2025-03-16');
   });
 });
 
