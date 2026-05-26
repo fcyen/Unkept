@@ -15,7 +15,12 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-function formatDateRange({ start, end }) {
+function formatDateRange(dateRange) {
+  if (!dateRange?.start || !dateRange?.end) {
+    return 'Undated';
+  }
+
+  const { start, end } = dateRange;
   const s = new Date(start + 'T00:00:00Z');
   const e = new Date(end + 'T00:00:00Z');
   const sameMonth =

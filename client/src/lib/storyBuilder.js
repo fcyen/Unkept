@@ -152,6 +152,10 @@ const MONTH_NAMES = [
  * "May-June 2025" if the trip spans two months.
  */
 export function generateTripName({ dateRange, country }) {
+  if (!dateRange?.start || !dateRange?.end) {
+    return country || 'Your Story';
+  }
+
   const start = new Date(dateRange.start + 'T00:00:00Z');
   const end = new Date(dateRange.end + 'T00:00:00Z');
   const startMonth = MONTH_NAMES[start.getUTCMonth()];
