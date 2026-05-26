@@ -1,14 +1,32 @@
+import { useEffect, useRef } from 'react';
 import PhotoTile from './PhotoTile.jsx';
 
-// BottomStrip — kept photos for the current chapter as slots that fill in.
+// BottomStrip — kept photos for every chapter, with chapters separated by a
+// vertical divider. The current chapter is the only one that surfaces empty
+// slots (up to its target) and the drag-landing affordance. Tiles do not
+// carry the orange "kept" ring (the RightStrip is where keep-state is read);
+// instead each chapter has its own glow colour so the user can see at a
+// glance which day a selection belongs to.
 const SLOT = 48;
 const SLOT_GAP = 7;
+const DIVIDER_GAP = 14;
 
-export default function BottomStrip({ kept, target, dropActive, currentKept, onSlotClick }) {
-  const filled = kept.length;
-  const slots = Math.max(target, filled);
-  const items = Array.from({ length: slots }, (_, i) => kept[i] || null);
-  const landingIdx = items.findIndex((x) => x === null);
+export default function BottomStrip({
+  chapterStrips,
+  totalKept,
+  totalTarget,
+  dropActive,
+  currentKept,
+  currentChapterId,
+  onSlotClick,
+}) {
+  const currentRef = useRef(null);
+
+  useEffect(() => {
+    const node = currentRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [currentChapterId]);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -20,7 +38,7 @@ export default function BottomStrip({ kept, target, dropActive, currentKept, onS
           fontSize: 18, lineHeight: 1, letterSpacing: '-0.02em',
           color: 'var(--paper)',
         }}>
-          {filled}<span style={{ color: 'var(--paper-dim)' }}>/{target}</span>
+          {totalKept}<span style={{ color: 'var(--paper-dim)' }}>/{totalTarget}</span>
         </div>
         <div style={{
           fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase',
@@ -28,14 +46,48 @@ export default function BottomStrip({ kept, target, dropActive, currentKept, onS
         }}>kept</div>
       </div>
 
-      <div style={{
-        flex: 1, minWidth: 0,
-        display: 'flex', gap: SLOT_GAP,
-        overflowX: 'auto', overflowY: 'hidden',
-        scrollbarWidth: 'none',
-        paddingBottom: 2, paddingTop: 2,
-      }}>
-        {items.map((p, i) => {
+      <div
+        style={{
+          flex: 1, minWidth: 0,
+          display: 'flex', alignItems: 'center', gap: DIVIDER_GAP,
+          overflowX: 'auto', overflowY: 'hidden',
+          scrollbarWidth: 'none',
+          paddingBottom: 2, paddingTop: 2,
+        }}
+      >
+        {chapterStrips.map((ch, idx) => (
+          <ChapterGroup
+            key={ch.id}
+            innerRef={ch.isCurrent ? currentRef : null}
+            chapter={ch}
+            showDivider={idx > 0}
+            dropActive={ch.isCurrent && dropActive}
+            currentKept={currentKept}
+            onSlotClick={onSlotClick}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChapterGroup({ chapter, showDivider, dropActive, currentKept, onSlotClick, innerRef = null }) {
+  const { kept, target, isCurrent, color } = chapter;
+  const filled = kept.length;
+  const slots = isCurrent ? Math.max(target, filled) : filled;
+  const items = Array.from({ length: slots }, (_, i) => kept[i] || null);
+  const landingIdx = items.findIndex((x) => x === null);
+
+  return (
+    <>
+      {showDivider && <ChapterDivider />}
+      <div
+        ref={innerRef}
+        style={{ display: 'flex', gap: SLOT_GAP, flexShrink: 0 }}
+      >
+        {items.length === 0 ? (
+          <EmptyChapterMark />
+        ) : items.map((p, i) => {
           const isExtra = i >= target;
           const isLanding = dropActive && i === landingIdx;
           if (p) {
@@ -45,14 +97,14 @@ export default function BottomStrip({ kept, target, dropActive, currentKept, onS
                 <PhotoTile
                   photo={p}
                   size={SLOT}
-                  kept
                   showMark={false}
                   onClick={() => onSlotClick && onSlotClick(p)}
                   style={{
                     borderRadius: 8,
                     transform: isCurrentKept ? 'translateY(-3px)' : 'none',
-                    transition: 'transform 200ms cubic-bezier(.3,.7,.4,1)',
-                    boxShadow: isCurrentKept ? '0 6px 14px rgba(0,0,0,0.45)' : 'none',
+                    transition: 'transform 200ms cubic-bezier(.3,.7,.4,1), box-shadow 200ms ease',
+                    boxShadow: chapterGlow(color, { lifted: isCurrentKept, dim: !isCurrent }),
+                    opacity: isCurrent ? 1 : 0.78,
                   }}
                 />
                 {isExtra && (
@@ -81,6 +133,54 @@ export default function BottomStrip({ kept, target, dropActive, currentKept, onS
           );
         })}
       </div>
-    </div>
+    </>
   );
+}
+
+function ChapterDivider() {
+  // Tall slim bar with bright caps top and bottom — reads as a deliberate
+  // separator rather than a hairline, but stays out of the way of the tiles.
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        flexShrink: 0,
+        width: 2,
+        height: SLOT + 14,
+        background: 'linear-gradient(to bottom, transparent, var(--paper-mute) 18%, var(--paper-mute) 82%, transparent)',
+        borderRadius: 2,
+        opacity: 0.85,
+      }}
+    />
+  );
+}
+
+function EmptyChapterMark() {
+  return (
+    <div
+      style={{
+        width: SLOT, height: SLOT, borderRadius: 8,
+        border: '1px dashed var(--line)',
+        opacity: 0.5,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+// Build the chapter-coloured glow for a kept tile. `lifted` is used while the
+// currently-displayed photo is shown (slight pop), `dim` reduces intensity
+// for chapters other than the current one.
+function chapterGlow(color, { lifted, dim }) {
+  const ring = lifted ? 2 : 1.5;
+  const ringAlpha = dim ? 'aa' : 'ee';
+  const glowAlpha = dim ? '33' : (lifted ? '88' : '66');
+  const wide = lifted ? 18 : 12;
+  const tight = lifted ? 6 : 4;
+  return [
+    `0 0 0 ${ring}px ${color}${ringAlpha}`,
+    `0 0 ${tight}px 0 ${color}${glowAlpha}`,
+    `0 0 ${wide}px 2px ${color}${dim ? '20' : '44'}`,
+    lifted ? '0 6px 14px rgba(0,0,0,0.45)' : '',
+  ].filter(Boolean).join(', ');
 }

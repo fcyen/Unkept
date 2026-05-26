@@ -82,6 +82,19 @@ function buildViewModel(story) {
   return { chapters, photoById, photosByChapter, tripName, dateLabel };
 }
 
+// Chapter palette used to tint kept-photo glows in the BottomStrip. Hues are
+// spaced around the wheel and tuned to read on the dark Darkroom canvas
+// without competing with the orange "accent" used for active UI affordances.
+const CHAPTER_GLOW_COLORS = [
+  '#FF6A2C', // orange
+  '#6FA8C7', // cool blue
+  '#B8D060', // good green
+  '#E5A55B', // warm yellow
+  '#C77FA8', // muted pink
+  '#7FC7A8', // mint
+  '#A87FC7', // muted purple
+];
+
 function ambientClass(kept, target) {
   if (kept === 0) return 'empty';
   if (kept < target) return 'under';
@@ -126,21 +139,33 @@ export default function CurationScreen({ story, onComplete, onBack }) {
   const chapter = chapters.find((c) => c.id === chapterId) || firstChapter;
   const chapterPhotos = photosByChapter[chapter?.id] || [];
   const current = chapterPhotos[photoIdx];
-  const keptInChapter = chapterPhotos.filter((p) => kept.has(p.id));
+
+  // Per-chapter kept photos, in skeleton order, for the bottom strip across
+  // all days and for the count badges on the chapter rail.
+  const keptByChapterPhotos = useMemo(() => {
+    const m = {};
+    chapters.forEach((c) => {
+      m[c.id] = (photosByChapter[c.id] || []).filter((p) => kept.has(p.id));
+    });
+    return m;
+  }, [kept, chapters, photosByChapter]);
 
   const keptByChapter = useMemo(() => {
     const m = {};
-    chapters.forEach((c) => { m[c.id] = 0; });
-    kept.forEach((id) => {
-      const p = photoById[id];
-      if (!p) return;
-      // Find which chapter this photo belongs to.
-      for (const c of chapters) {
-        if (c.photoIds.includes(id)) { m[c.id] = (m[c.id] || 0) + 1; break; }
-      }
-    });
+    chapters.forEach((c) => { m[c.id] = (keptByChapterPhotos[c.id] || []).length; });
     return m;
-  }, [kept, chapters, photoById]);
+  }, [chapters, keptByChapterPhotos]);
+
+  const chapterStrips = useMemo(
+    () => chapters.map((c, i) => ({
+      id: c.id,
+      target: c.target,
+      kept: keptByChapterPhotos[c.id] || [],
+      isCurrent: c.id === chapter?.id,
+      color: CHAPTER_GLOW_COLORS[i % CHAPTER_GLOW_COLORS.length],
+    })),
+    [chapters, keptByChapterPhotos, chapter?.id],
+  );
 
   const totalKept = kept.size;
   const totalTarget = chapters.reduce((s, c) => s + c.target, 0);
@@ -186,8 +211,15 @@ export default function CurationScreen({ story, onComplete, onBack }) {
       toggle(p.id, false);
       return;
     }
-    const i = chapterPhotos.findIndex((x) => x.id === p.id);
-    if (i >= 0) pickIdx(i);
+    const inCurrent = chapterPhotos.findIndex((x) => x.id === p.id);
+    if (inCurrent >= 0) { pickIdx(inCurrent); return; }
+    // Slot belongs to another chapter — jump to that chapter and the photo.
+    const owner = chapters.find((c) => c.photoIds.includes(p.id));
+    if (!owner) return;
+    const photos = photosByChapter[owner.id] || [];
+    const idx = photos.findIndex((x) => x.id === p.id);
+    setChapterId(owner.id);
+    setPhotoIdx(Math.max(0, idx));
   };
 
   const onFinish = () => setShowCelebrate(true);
@@ -244,10 +276,12 @@ export default function CurationScreen({ story, onComplete, onBack }) {
 
       <div className="curation-bottombar">
         <BottomStrip
-          kept={keptInChapter}
-          target={chapter.target}
+          chapterStrips={chapterStrips}
+          totalKept={totalKept}
+          totalTarget={totalTarget}
           dropActive={dropHint === 'keep'}
           currentKept={kept.has(current.id) ? current.id : null}
+          currentChapterId={chapter.id}
           onSlotClick={onSlotClick}
         />
         <NavRow
