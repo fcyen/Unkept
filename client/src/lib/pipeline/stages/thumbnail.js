@@ -187,11 +187,13 @@ export async function thumbnailStage(input, options = {}, onProgress) {
       const standard = downscaleCanvas(hero.canvas, STANDARD_SIZE);
       const imageData = standard.ctx.getImageData(0, 0, standard.width, standard.height);
       photo._rawVariance = laplacianVariance(imageData);
-      photo.thumbnailUrl = await canvasToDataUrl(standard.canvas);
-      photo.thumbnailHeroUrl =
-        standard.canvas === hero.canvas
+      photo.thumbnailUrl = await canvasToDataUrl(decoded.canvas);
+      photo.thumbnailHeroUrl = standard.canvas === hero.canvas
           ? photo.thumbnailUrl
           : await canvasToDataUrl(hero.canvas);
+      photo.width = decoded.width;
+      photo.height = decoded.height;
+      photo.orientation = decoded.height > decoded.width ? 'portrait' : 'landscape';
     },
     onProgress,
   );

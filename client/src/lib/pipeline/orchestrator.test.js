@@ -10,6 +10,9 @@ describe('runPhase1', () => {
       timestamp: '2025-03-15T08:00:00Z',
       coords: { lat: 1, lng: 2 },
       file: {},
+      width: 320,
+      height: 200,
+      orientation: 'landscape',
       thumbnailUrl: null,
       thumbnailHeroUrl: null,
       thumbnailFailed: false,
@@ -82,6 +85,9 @@ describe('runPhase1', () => {
     expect(skeleton.version).toBe('1.0');
     expect(skeleton.chapters).toHaveLength(1);
     expect(skeleton.photos[photo.id]).toBeDefined();
+    expect(skeleton.photos[photo.id].orientation).toBe('landscape');
+    expect(skeleton.photos[photo.id].width).toBe(320);
+    expect(skeleton.photos[photo.id].height).toBe(200);
     expect(skeleton.photos[photo.id].file).toBeUndefined();
   });
 

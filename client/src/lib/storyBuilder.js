@@ -194,8 +194,9 @@ export function selectPhotoCardLayout(photos, heroId) {
   }
 
   const nonHero = photos.filter((p) => p.id !== heroId);
-  const landscapes = nonHero.filter((p) => p.orientation === 'landscape');
-  const portraits = nonHero.filter((p) => p.orientation === 'portrait');
+  const heroOrientation = orientationOf(hero);
+  const landscapes = nonHero.filter((p) => orientationOf(p) === 'landscape');
+  const portraits = nonHero.filter((p) => orientationOf(p) === 'portrait');
 
   // Sort by quality desc so "top N" is deterministic.
   const byQuality = (a, b) => (b.qualityScore ?? 0) - (a.qualityScore ?? 0);
@@ -203,7 +204,7 @@ export function selectPhotoCardLayout(photos, heroId) {
   portraits.sort(byQuality);
 
   // Rule 1 — portrait-4
-  if (hero.orientation === 'portrait' && portraits.length >= 3) {
+  if (heroOrientation === 'portrait' && portraits.length >= 3) {
     return {
       layout: 'portrait-4',
       photoIds: [hero.id, ...portraits.slice(0, 3).map((p) => p.id)],
@@ -211,7 +212,7 @@ export function selectPhotoCardLayout(photos, heroId) {
   }
 
   // Rule 2 — landscape-3
-  if (hero.orientation === 'landscape' && landscapes.length >= 2) {
+  if (heroOrientation === 'landscape' && landscapes.length >= 2) {
     return {
       layout: 'landscape-3',
       photoIds: [hero.id, ...landscapes.slice(0, 2).map((p) => p.id)],
@@ -220,13 +221,13 @@ export function selectPhotoCardLayout(photos, heroId) {
 
   // Rule 3 — mixed-2p-1l (2 portraits on top, 1 landscape below)
   //   Hero occupies its orientation slot; remaining slots filled by top quality.
-  if (hero.orientation === 'portrait' && portraits.length >= 1 && landscapes.length >= 1) {
+  if (heroOrientation === 'portrait' && portraits.length >= 1 && landscapes.length >= 1) {
     return {
       layout: 'mixed-2p-1l',
       photoIds: [hero.id, portraits[0].id, landscapes[0].id],
     };
   }
-  if (hero.orientation === 'landscape' && portraits.length >= 2) {
+  if (heroOrientation === 'landscape' && portraits.length >= 2) {
     return {
       layout: 'mixed-2p-1l',
       photoIds: [portraits[0].id, portraits[1].id, hero.id],
@@ -234,7 +235,7 @@ export function selectPhotoCardLayout(photos, heroId) {
   }
 
   // Rule 4 — landscape-2
-  if (hero.orientation === 'landscape' && landscapes.length >= 1) {
+  if (heroOrientation === 'landscape' && landscapes.length >= 1) {
     return {
       layout: 'landscape-2',
       photoIds: [hero.id, landscapes[0].id],
@@ -246,6 +247,16 @@ export function selectPhotoCardLayout(photos, heroId) {
     layout: 'portrait-1',
     photoIds: [hero.id],
   };
+}
+
+function orientationOf(photo) {
+  if (photo.orientation === 'portrait' || photo.orientation === 'landscape') {
+    return photo.orientation;
+  }
+  if (typeof photo.width === 'number' && typeof photo.height === 'number') {
+    return photo.height > photo.width ? 'portrait' : 'landscape';
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

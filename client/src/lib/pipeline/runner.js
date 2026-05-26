@@ -106,11 +106,15 @@ export function assembleSkeleton(pipelineOutput, meta) {
   // Build photos map (strip File references, ensure serialisable)
   const photosMap = {};
   for (const [id, photo] of photos) {
+    const dimensions = getDisplayDimensions(photo);
     photosMap[id] = {
       id: photo.id,
       name: photo.name,
       timestamp: photo.timestamp || null,
       coords: photo.coords || null,
+      width: dimensions.width,
+      height: dimensions.height,
+      orientation: getDisplayOrientation(photo, dimensions),
       thumbnailUrl: photo.thumbnailUrl || null,
       thumbnailHeroUrl: photo.thumbnailHeroUrl || null,
       thumbnailFailed: photo.thumbnailFailed || false,
@@ -152,4 +156,30 @@ export function assembleSkeleton(pipelineOutput, meta) {
       surveyResponses: meta.surveyResponses || {},
     },
   };
+}
+
+function getDisplayDimensions(photo) {
+  const width = typeof photo.width === 'number' ? photo.width : null;
+  const height = typeof photo.height === 'number' ? photo.height : null;
+
+  if (width == null || height == null) {
+    return { width, height };
+  }
+
+  // EXIF orientations 5-8 are rotated 90 degrees for display.
+  if (typeof photo.orientation === 'number' && photo.orientation >= 5 && photo.orientation <= 8) {
+    return { width: height, height: width };
+  }
+
+  return { width, height };
+}
+
+function getDisplayOrientation(photo, dimensions = getDisplayDimensions(photo)) {
+  if (photo.orientation === 'portrait' || photo.orientation === 'landscape') {
+    return photo.orientation;
+  }
+  if (dimensions.width == null || dimensions.height == null) {
+    return null;
+  }
+  return dimensions.height > dimensions.width ? 'portrait' : 'landscape';
 }
