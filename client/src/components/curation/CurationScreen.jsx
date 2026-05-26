@@ -82,6 +82,19 @@ function buildViewModel(story) {
   return { chapters, photoById, photosByChapter, tripName, dateLabel };
 }
 
+// Chapter palette used to tint kept-photo glows in the BottomStrip. Hues are
+// spaced around the wheel and tuned to read on the dark Darkroom canvas
+// without competing with the orange "accent" used for active UI affordances.
+const CHAPTER_GLOW_COLORS = [
+  '#FF6A2C', // orange
+  '#6FA8C7', // cool blue
+  '#B8D060', // good green
+  '#E5A55B', // warm yellow
+  '#C77FA8', // muted pink
+  '#7FC7A8', // mint
+  '#A87FC7', // muted purple
+];
+
 function ambientClass(kept, target) {
   if (kept === 0) return 'empty';
   if (kept < target) return 'under';
@@ -144,11 +157,12 @@ export default function CurationScreen({ story, onComplete, onBack }) {
   }, [chapters, keptByChapterPhotos]);
 
   const chapterStrips = useMemo(
-    () => chapters.map((c) => ({
+    () => chapters.map((c, i) => ({
       id: c.id,
       target: c.target,
       kept: keptByChapterPhotos[c.id] || [],
       isCurrent: c.id === chapter?.id,
+      color: CHAPTER_GLOW_COLORS[i % CHAPTER_GLOW_COLORS.length],
     })),
     [chapters, keptByChapterPhotos, chapter?.id],
   );

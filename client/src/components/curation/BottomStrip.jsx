@@ -3,10 +3,13 @@ import PhotoTile from './PhotoTile.jsx';
 
 // BottomStrip — kept photos for every chapter, with chapters separated by a
 // vertical divider. The current chapter is the only one that surfaces empty
-// slots (up to its target) and the drag-landing affordance.
+// slots (up to its target) and the drag-landing affordance. Tiles do not
+// carry the orange "kept" ring (the RightStrip is where keep-state is read);
+// instead each chapter has its own glow colour so the user can see at a
+// glance which day a selection belongs to.
 const SLOT = 48;
 const SLOT_GAP = 7;
-const DIVIDER_GAP = 12;
+const DIVIDER_GAP = 14;
 
 export default function BottomStrip({
   chapterStrips,
@@ -19,7 +22,6 @@ export default function BottomStrip({
 }) {
   const currentRef = useRef(null);
 
-  // Keep the current chapter visible as the user moves between days.
   useEffect(() => {
     const node = currentRef.current;
     if (!node) return;
@@ -70,10 +72,7 @@ export default function BottomStrip({
 }
 
 function ChapterGroup({ chapter, showDivider, dropActive, currentKept, onSlotClick, innerRef = null }) {
-  const { kept, target, isCurrent } = chapter;
-  // Other chapters render only the photos they kept. The current chapter also
-  // surfaces empty slots up to its target so the user sees where the next
-  // photo will land.
+  const { kept, target, isCurrent, color } = chapter;
   const filled = kept.length;
   const slots = isCurrent ? Math.max(target, filled) : filled;
   const items = Array.from({ length: slots }, (_, i) => kept[i] || null);
@@ -81,17 +80,7 @@ function ChapterGroup({ chapter, showDivider, dropActive, currentKept, onSlotCli
 
   return (
     <>
-      {showDivider && (
-        <div
-          aria-hidden="true"
-          style={{
-            width: 1, alignSelf: 'stretch',
-            background: 'var(--line)',
-            margin: `0 -${(DIVIDER_GAP - SLOT_GAP) / 2}px`,
-            flexShrink: 0,
-          }}
-        />
-      )}
+      {showDivider && <ChapterDivider />}
       <div
         ref={innerRef}
         style={{ display: 'flex', gap: SLOT_GAP, flexShrink: 0 }}
@@ -108,15 +97,14 @@ function ChapterGroup({ chapter, showDivider, dropActive, currentKept, onSlotCli
                 <PhotoTile
                   photo={p}
                   size={SLOT}
-                  kept
                   showMark={false}
                   onClick={() => onSlotClick && onSlotClick(p)}
                   style={{
                     borderRadius: 8,
                     transform: isCurrentKept ? 'translateY(-3px)' : 'none',
-                    transition: 'transform 200ms cubic-bezier(.3,.7,.4,1)',
-                    boxShadow: isCurrentKept ? '0 6px 14px rgba(0,0,0,0.45)' : 'none',
-                    opacity: isCurrent ? 1 : 0.72,
+                    transition: 'transform 200ms cubic-bezier(.3,.7,.4,1), box-shadow 200ms ease',
+                    boxShadow: chapterGlow(color, { lifted: isCurrentKept, dim: !isCurrent }),
+                    opacity: isCurrent ? 1 : 0.78,
                   }}
                 />
                 {isExtra && (
@@ -149,9 +137,25 @@ function ChapterGroup({ chapter, showDivider, dropActive, currentKept, onSlotCli
   );
 }
 
+function ChapterDivider() {
+  // Tall slim bar with bright caps top and bottom — reads as a deliberate
+  // separator rather than a hairline, but stays out of the way of the tiles.
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        flexShrink: 0,
+        width: 2,
+        height: SLOT + 14,
+        background: 'linear-gradient(to bottom, transparent, var(--paper-mute) 18%, var(--paper-mute) 82%, transparent)',
+        borderRadius: 2,
+        opacity: 0.85,
+      }}
+    />
+  );
+}
+
 function EmptyChapterMark() {
-  // A chapter with zero kept photos gets a small dim placeholder so the
-  // divider doesn't sit flush against the next chapter's tiles.
   return (
     <div
       style={{
@@ -162,4 +166,21 @@ function EmptyChapterMark() {
       }}
     />
   );
+}
+
+// Build the chapter-coloured glow for a kept tile. `lifted` is used while the
+// currently-displayed photo is shown (slight pop), `dim` reduces intensity
+// for chapters other than the current one.
+function chapterGlow(color, { lifted, dim }) {
+  const ring = lifted ? 2 : 1.5;
+  const ringAlpha = dim ? 'aa' : 'ee';
+  const glowAlpha = dim ? '33' : (lifted ? '88' : '66');
+  const wide = lifted ? 18 : 12;
+  const tight = lifted ? 6 : 4;
+  return [
+    `0 0 0 ${ring}px ${color}${ringAlpha}`,
+    `0 0 ${tight}px 0 ${color}${glowAlpha}`,
+    `0 0 ${wide}px 2px ${color}${dim ? '20' : '44'}`,
+    lifted ? '0 6px 14px rgba(0,0,0,0.45)' : '',
+  ].filter(Boolean).join(', ');
 }
