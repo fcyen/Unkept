@@ -35,7 +35,7 @@ const JPEG_QUALITY = 0.7;
 async function decodeToCanvas(file, maxSize) {
   let bitmap;
   try {
-    bitmap = await createImageBitmap(file);
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch {
     return null;
   }

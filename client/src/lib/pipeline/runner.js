@@ -161,16 +161,6 @@ export function assembleSkeleton(pipelineOutput, meta) {
 function getDisplayDimensions(photo) {
   const width = typeof photo.width === 'number' ? photo.width : null;
   const height = typeof photo.height === 'number' ? photo.height : null;
-
-  if (width == null || height == null) {
-    return { width, height };
-  }
-
-  // EXIF orientations 5-8 are rotated 90 degrees for display.
-  if (typeof photo.orientation === 'number' && photo.orientation >= 5 && photo.orientation <= 8) {
-    return { width: height, height: width };
-  }
-
   return { width, height };
 }
 
