@@ -138,6 +138,11 @@ describe('generateTripName', () => {
     });
     expect(name).toBe('Japan, May–June 2025');
   });
+
+  it('falls back when no EXIF dates are available', () => {
+    expect(generateTripName({ dateRange: null, country: null })).toBe('Your Story');
+    expect(generateTripName({ dateRange: null, country: 'Japan' })).toBe('Japan');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -304,6 +309,22 @@ describe('buildStory', () => {
     const story = buildStory(scenarios.short.skeleton);
     expect(story.chapters[0].title).toBe('Day 1');
     expect(story.chapters[0].location).toBeNull();
+  });
+
+  it('builds a story when the skeleton has no date range', () => {
+    const skeleton = {
+      ...scenarios.edge.skeleton,
+      meta: {
+        ...scenarios.edge.skeleton.meta,
+        dateRange: null,
+      },
+    };
+
+    const story = buildStory(skeleton);
+
+    expect(story.tripName).toBe('Your Story');
+    expect(story.frames[0].dateRange).toBeNull();
+    expect(story.frames[0].tripName).toBe('Your Story');
   });
 });
 
