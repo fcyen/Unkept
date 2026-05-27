@@ -244,6 +244,19 @@ describe('selectPhotoCardLayout', () => {
     expect(r.photoIds).toContain('hero');
   });
 
+  it('infers orientation from dimensions when orientation is missing', () => {
+    const photos = [
+      { id: 'hero', width: 320, height: 200, qualityScore: 0.9 },
+      { id: 'l1', width: 300, height: 200, qualityScore: 0.8 },
+      { id: 'l2', width: 280, height: 180, qualityScore: 0.7 },
+    ];
+
+    const r = selectPhotoCardLayout(photos, 'hero');
+
+    expect(r.layout).toBe('landscape-3');
+    expect(r.photoIds).toEqual(['hero', 'l1', 'l2']);
+  });
+
   it('throws if hero not in photo list', () => {
     expect(() =>
       selectPhotoCardLayout([p('a', 'landscape', 0.5)], 'nonexistent')

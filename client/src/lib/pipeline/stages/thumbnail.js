@@ -35,7 +35,7 @@ const JPEG_QUALITY = 0.7;
 async function decodeToCanvas(file, maxSize) {
   let bitmap;
   try {
-    bitmap = await createImageBitmap(file);
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch {
     return null;
   }
@@ -188,10 +188,12 @@ export async function thumbnailStage(input, options = {}, onProgress) {
       const imageData = standard.ctx.getImageData(0, 0, standard.width, standard.height);
       photo._rawVariance = laplacianVariance(imageData);
       photo.thumbnailUrl = await canvasToDataUrl(standard.canvas);
-      photo.thumbnailHeroUrl =
-        standard.canvas === hero.canvas
+      photo.thumbnailHeroUrl = standard.canvas === hero.canvas
           ? photo.thumbnailUrl
           : await canvasToDataUrl(hero.canvas);
+      photo.width = hero.width;
+      photo.height = hero.height;
+      photo.orientation = hero.height > hero.width ? 'portrait' : 'landscape';
     },
     onProgress,
   );

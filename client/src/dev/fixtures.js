@@ -13,11 +13,8 @@
  * Thumbnails are inline SVG data URLs labelled with chapter·photo for
  * visual debugging; real image bytes are not required for layout work.
  *
- * Note on `orientation`: the production pipeline does not yet write this
- * field onto photos (the thumbnail stage knows dimensions and should set
- * it; follow-up work tracked in IMPLEMENTATION-PLAN.md PR 1C). For now,
- * fixtures include it so storyBuilder layout selection can exercise all
- * five photo-card layouts.
+ * Note on `orientation`: production skeletons include the same field so
+ * storyBuilder layout selection can choose among all five photo-card layouts.
  */
 
 const LANDSCAPE = { w: 60, h: 40, orientation: 'landscape' };
