@@ -5,14 +5,18 @@ function makePhoto(id, timestamp, coords = null) {
   return { id, name: `${id}.jpg`, timestamp, coords, file: null };
 }
 
+function localIso(year, month, day, hour = 12, minute = 0) {
+  return new Date(year, month - 1, day, hour, minute).toISOString();
+}
+
 describe('clusterByDay', () => {
   it('groups photos by calendar date', () => {
     const photos = [
-      makePhoto('p1', '2025-03-15T08:00:00Z'),
-      makePhoto('p2', '2025-03-15T14:00:00Z'),
-      makePhoto('p3', '2025-03-16T09:00:00Z'),
-      makePhoto('p4', '2025-03-16T18:00:00Z'),
-      makePhoto('p5', '2025-03-17T10:00:00Z'),
+      makePhoto('p1', localIso(2025, 3, 15, 8)),
+      makePhoto('p2', localIso(2025, 3, 15, 14)),
+      makePhoto('p3', localIso(2025, 3, 16, 9)),
+      makePhoto('p4', localIso(2025, 3, 16, 18)),
+      makePhoto('p5', localIso(2025, 3, 17, 10)),
     ];
 
     const clusters = clusterByDay(photos);
@@ -25,7 +29,7 @@ describe('clusterByDay', () => {
 
   it('puts photos without timestamps in an undated group', () => {
     const photos = [
-      makePhoto('p1', '2025-03-15T08:00:00Z'),
+      makePhoto('p1', localIso(2025, 3, 15, 8)),
       makePhoto('p2', null),
       makePhoto('p3', null),
     ];
@@ -51,9 +55,9 @@ describe('clusterByDay', () => {
 
   it('single-photo day forms its own cluster', () => {
     const photos = [
-      makePhoto('p1', '2025-03-15T08:00:00Z'),
-      makePhoto('p2', '2025-03-16T08:00:00Z'),
-      makePhoto('p3', '2025-03-17T08:00:00Z'),
+      makePhoto('p1', localIso(2025, 3, 15, 8)),
+      makePhoto('p2', localIso(2025, 3, 16, 8)),
+      makePhoto('p3', localIso(2025, 3, 17, 8)),
     ];
 
     const clusters = clusterByDay(photos);
@@ -66,9 +70,9 @@ describe('clusterByDay', () => {
 
   it('produces same output regardless of input order', () => {
     const photos = [
-      makePhoto('p3', '2025-03-17T10:00:00Z'),
-      makePhoto('p1', '2025-03-15T08:00:00Z'),
-      makePhoto('p2', '2025-03-16T09:00:00Z'),
+      makePhoto('p3', localIso(2025, 3, 17, 10)),
+      makePhoto('p1', localIso(2025, 3, 15, 8)),
+      makePhoto('p2', localIso(2025, 3, 16, 9)),
     ];
 
     const clusters = clusterByDay(photos);
@@ -86,9 +90,9 @@ describe('clusterByDay', () => {
 
   it('sorts photos within each day by timestamp', () => {
     const photos = [
-      makePhoto('p3', '2025-03-15T18:00:00Z'),
-      makePhoto('p1', '2025-03-15T08:00:00Z'),
-      makePhoto('p2', '2025-03-15T12:00:00Z'),
+      makePhoto('p3', localIso(2025, 3, 15, 18)),
+      makePhoto('p1', localIso(2025, 3, 15, 8)),
+      makePhoto('p2', localIso(2025, 3, 15, 12)),
     ];
 
     const clusters = clusterByDay(photos);
