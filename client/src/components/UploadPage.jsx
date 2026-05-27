@@ -51,15 +51,20 @@ export default function UploadPage({ onStoryReady }) {
   const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
   const [geocodingProgress, setGeocodingProgress] = useState(null);
+  // Covers the post-pipeline finalization (story build + geocoding) so the
+  // CTA stays disabled all the way through to the curation screen, instead
+  // of re-activating briefly between phase=DONE and the navigation.
+  const [finalizing, setFinalizing] = useState(false);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
 
   const pipeline = usePipeline();
 
   const processing =
-    pipeline.phase !== PHASES.IDLE &&
-    pipeline.phase !== PHASES.DONE &&
-    pipeline.phase !== PHASES.ERROR;
+    finalizing ||
+    (pipeline.phase !== PHASES.IDLE &&
+      pipeline.phase !== PHASES.DONE &&
+      pipeline.phase !== PHASES.ERROR);
 
   // When the skeleton lands, build the Story, run geocoding, fold the
   // labels back in, and hand the result to SlideshowPlayer.
@@ -69,6 +74,7 @@ export default function UploadPage({ onStoryReady }) {
     handledResultRef.current = pipeline.result;
 
     (async () => {
+      setFinalizing(true);
       try {
         const skeleton = pipeline.result;
         let story = buildStory(skeleton);
@@ -90,6 +96,7 @@ export default function UploadPage({ onStoryReady }) {
       } catch (err) {
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
+        setFinalizing(false);
       }
     })();
   }, [pipeline.result, previews, onStoryReady]);
