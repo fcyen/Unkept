@@ -11,11 +11,20 @@
  */
 
 const cache = new Map();
+const REQUEST_DELAY_MS = 1100;
+
+function coordinateKey(lat, lon) {
+  return `${lat.toFixed(3)},${lon.toFixed(3)}`;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function reverseGeocode(lat, lon) {
   // ~100m resolution — matches how storyBuilder expects chapters near
   // each other to collapse onto the same label.
-  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  const key = coordinateKey(lat, lon);
   if (cache.has(key)) return cache.get(key);
 
   try {
@@ -58,10 +67,18 @@ export async function resolveSkeletonLocations(skeleton, onProgress) {
   const chapters = skeleton.chapters;
   const chapterLocations = {};
   const countries = [];
+  let hasMadeFreshRequest = false;
 
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i];
     if (ch.coords) {
+      const key = coordinateKey(ch.coords.lat, ch.coords.lng);
+      const isCached = cache.has(key);
+      if (!isCached && hasMadeFreshRequest) {
+        await wait(REQUEST_DELAY_MS);
+      }
+      if (!isCached) hasMadeFreshRequest = true;
+
       const result = await reverseGeocode(ch.coords.lat, ch.coords.lng);
       if (result) {
         chapterLocations[ch.id] = result;
@@ -70,12 +87,6 @@ export async function resolveSkeletonLocations(skeleton, onProgress) {
     }
 
     if (onProgress) onProgress(i + 1, chapters.length);
-
-    // Nominatim's rate limit is 1 req/sec; the cache short-circuits repeat
-    // coords so in practice the wait only applies on fresh requests.
-    if (i < chapters.length - 1) {
-      await new Promise((r) => setTimeout(r, 1100));
-    }
   }
 
   return { chapterLocations, country: mostCommon(countries) };
