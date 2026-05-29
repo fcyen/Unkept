@@ -49,7 +49,7 @@ This project has two learning goals: AI-powered application development, and sli
 - Prefer approaches that make AI decisions visible (debug overlay, logging) over black-box integrations
 - After each phase, reflect on what the AI technique contributed that the previous approach could not
 
-**Design:** Phase 2 (Wrapped-style slideshow) is the primary design learning surface:
+**Design:** Part 3 (Wrapped-style slideshow) is the primary design learning surface:
 - Before each renderer PR, study 2–3 Wrapped/slideshow references (Spotify Wrapped, Apple Memories, short-form reels)
 - Form a clear design intent before writing any code
 - Iterate using the `/dev` route — instant visual feedback across all 3 fixture scenarios
