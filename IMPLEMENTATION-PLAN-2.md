@@ -104,6 +104,13 @@ clamps at the last index — so the keep-and-advance rhythm dead-ends at each
 chapter's last photo with no cue. Add a "chapter complete → roll into next
 chapter" hand-off so the whole pass feels like one continuous motion.
 
+### A7. "Photos stay on your device" reassurance (upload page)
+
+Surface the core privacy promise on the first screen. Add a short reassurance
+line on the upload page (`UploadPage.jsx`) — near the dropzone / CTA — stating
+photos never leave the device. Reinforces the product's headline differentiator
+(EXECUTIVE-SUMMARY's "core privacy promise") right at the point of action.
+
 > **Dropped this session:** keyboard navigation (deferred), post-remove undo
 > (redundant — the keep toggle already re-adds a photo), and a mobile-layout
 > check (judged OK for now).
@@ -115,26 +122,31 @@ chapter" hand-off so the whole pass feels like one continuous motion.
 The wait after "Start curating" has both a structural cause and a perceptual
 one.
 
-### B1. Remove geocoding from the curation hot path (⚠ under review)
-
-> **Under review.** Pending re-discussion: the "Geocoding lives in Part 3"
-> design may be outdated, and geocoded labels may be wanted in **Part 2**
-> chapters. Treat the action below as provisional until that's resolved.
+### B1. Skip geocoding for now (off the curation hot path)
 
 `UploadPage.jsx:71-102` runs `resolveSkeletonLocations()` (Nominatim) during
 finalization, **before** handing off to curation — the button literally sits on
-"Resolving locations… 3/8". This is:
+"Resolving locations… 3/8", which is network-bound and unshortenable
+(`geocode.js:14,77-79` is locked to 1 req/1100ms per Nominatim policy, so an
+N-area trip has a ~1.1s × N floor).
 
-- **A regression** from the documented design ("Geocoding lives in Part 3").
-- **Network-bound and unshortenable:** `geocode.js:14,77-79` is locked to one
-  request per 1100ms (Nominatim's 1 req/sec policy; parallelizing risks a ban),
-  so an N-area trip has a ~1.1s × N floor.
-- **Invisible right now:** its only consumers (location labels, country) live in
-  Part 3, which is hidden.
+**Decision: skip geocoding entirely for the demo.**
 
-Action: pull geocoding off the curation path entirely. Reintroduce it later,
-**overlapped with the pipeline** (so labels are ready in the background without
-a blocking phase) when Part 3 returns.
+- **Chapter *separation* is unaffected.** `cluster.js` splits chapters purely by
+  EXIF timestamps (day / time-gap), never geocoding. Chapters simply render as
+  bare "Day N" — which curation already handles
+  (`CurationScreen.jsx:236-240`). Time-based separation stays exactly as is.
+- Removes a network round-trip and the rate-limited wait from the path into
+  curation — a direct loading win.
+- Trip name comes from the A1 survey, not geocoding — so nothing user-facing
+  regresses.
+
+**Future direction (agreed):** geocoding returns to *name* the day-chapters
+("Day 1 · Lisbon") — **labelling only, never separation**, and time-based
+separation is kept. When it returns it should be **progressive** (curation opens
+immediately; labels upgrade in place) and **opt-in** (e.g. a survey consent
+toggle), so the "disconnect-to-verify" privacy promise stays honest. The
+specific privacy mechanism is deferred until then. See Future consideration.
 
 ### B2. Survey fills the wait (crossover with A1)
 
@@ -170,6 +182,9 @@ two-phase thumbnail stream is in place to feed it.)
   profiling shows we need it.
 - **Progressive handoff** — open curation on chapter 1 as soon as it's ready,
   rather than waiting for the entire set to finish processing. Deferred.
+- **Geocoded chapter names (opt-in, progressive)** — name the day-chapters with
+  place labels via Nominatim, loaded progressively and gated behind explicit
+  consent. Labelling only; keeps time-based separation. Deferred. (See B1.)
 
 ---
 
