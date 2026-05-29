@@ -67,7 +67,8 @@ function buildViewModel(story) {
       .filter(Boolean);
   });
 
-  const tripName = story.tripName
+  const tripName = skeleton.meta?.surveyResponses?.tripName
+    || story.tripName
     || story.chapters?.[0]?.location?.country
     || 'trip';
 
