@@ -191,10 +191,77 @@ two-phase thumbnail stream is in place to feed it.)
 ## Suggested sequence
 
 1. **A1** survey (= **B2**: fixes trip name, activates target logic, fills the
-   wait, learns about the user) + **B1** geocoding off the hot path *(pending
-   re-discussion)* — preconditions for cleanly hiding Part 3.
+   wait, learns about the user) + **B1** skip geocoding — preconditions for
+   cleanly hiding Part 3.
 2. **A3** hide Part 3 (config switch) + **A4** full-res download + **A2**
    Celebration rewrite — one coherent "demo endpoint" pass.
-3. **A5** keep-and-advance hand-off.
+3. **A5** keep-and-advance hand-off + **A7** on-device privacy line (done).
 4. **B3** two-phase thumbnails, then **B4** developing preview grid — structural
    then perceptual, if the wait still bites.
+
+---
+
+## Appendix — carried forward from `IMPLEMENTATION-PLAN.md` (deprecated)
+
+`IMPLEMENTATION-PLAN.md` (April 2026 design review) is superseded by this doc and
+has been removed. Its architecture/data-model content lives in `ARCHITECTURE.md`;
+its completed work is reflected in the codebase. The still-live items not already
+captured above are preserved here.
+
+### Open performance threads (extend Part B)
+
+- **Web Worker hoist for thumbnail + dedup.** Today everything but EXIF runs on
+  the *main thread* — blocks React and can't use a second core beyond what async
+  I/O interleaving gives `parallelMap`. Likely the single largest perf win.
+- **Merge dedup pass-2 decode with thumbnail decode.** Each file is decoded
+  *twice* today (16×16 for the perceptual hash, 1000px for the thumbnail); one
+  decode + two resizes ≈ halves decode cost. Pairs with B3.
+- **Hero (1000px) tier only for photos the slideshow actually shows.** Burst
+  candidates sit in the photos map but are never rendered. Extends B3.
+- **Benchmark before trusting the pool size.** The concurrency pool of 4 is a
+  guess; measure a ~500-photo trip on mid-range Android. Informs the
+  Future-consideration worker-concurrency item.
+
+### Notes attached to existing items
+
+- **B4 ← DarkroomView (orig. PR 2C).** B4's "developing preview grid" *is* the
+  original DarkroomView spec: thumbnails fade in on a dim background as
+  EXIF/dedup/thumbnail stages complete — a film-development metaphor that matches
+  curation's existing "Darkroom identity." Never built (UploadPage uses the
+  cycling-phrase button instead). Reuse the metaphor.
+- **B1 ← Mode badge + boundary notification (orig. PR 2F).** The deferred opt-in
+  geocoding would be the product's *first* network feature; the original
+  "Local/Server mode badge + one-time boundary notification" is its privacy UX.
+  Pairs with the A7 on-device line.
+- **A1 ← Survey design contract.** Lessons from the original (and from it being
+  dropped once for *feeling awkward*): keep to ≤2 questions; 60s timeout →
+  proceed with defaults; enforce a minimum display time so an instant pipeline
+  doesn't flash past it; handle "Phase 1A finishes before the user answers." A1's
+  long-term evolution is free-text intent interpreted by an LLM agent (PR 5A).
+
+### Post-demo roadmap pointer — back to AI learning
+
+**After the demo phase, focus switches back to the project's core learning goal:
+AI-powered development, starting with calling the APIs.** Carried from the
+deprecated plan, in sequence:
+
+- **Phase 3 — LLM integration (opt-in), START HERE post-demo:** caption
+  generation on the **raw Anthropic SDK** (prompt caching, streaming) → agentic
+  captions with **tool use** → story-narrative agent → share.
+- **Phase 4 — On-device ML** (implement heuristics before ML — the contrast is
+  the lesson): MediaPipe face detection, NIMA aesthetic scoring, MobileNet scene
+  classification, CLIP semantic embeddings / variety selection. Service-worker
+  model caching ships with the first model.
+- **Phase 5 — Agents + preference learning:** free-text survey agent (PR 5A,
+  evolves A1); preference learning from `swapHistory` (PR 5B, fed by PR 2E).
+- **Framework progression (raw-first):** Anthropic SDK (primitives → tool use) →
+  Vercel AI SDK (streaming into React) → Claude Agent SDK (multi-agent). Avoid
+  LangChain / LlamaIndex until the raw SDK is understood.
+- **Remaining Part 3 backlog:** live photos from burst groups (PR 2G);
+  photo-swap interaction recording `swapHistory` (PR 2E).
+
+### Dev assets to (re)build
+
+- **Fixture photo library** (~50 real photos with known properties: exact-dup
+  pair, near-dup burst with hamming ≤ 5, blurry/sharp pair, no-EXIF, no-GPS, span
+  of 3+ calendar days) for pipeline + perf testing. May not exist yet.
