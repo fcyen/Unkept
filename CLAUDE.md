@@ -31,7 +31,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ## Memory rules
 - Revoke blob URLs as early as possible (immediately after dedup rejects, after thumbnail data URLs are created)
 - Never hold File bytes in memory longer than needed for the current stage
-- Target: no File references survive past chapter building
+- Target: no *decoded* image data survives past chapter building. Original `File` handles for the *kept* set are deliberately retained past this point — they are lazy disk references (cheap), read into memory only at export time for full-res download, then released.
 
 ## Key decisions
 - Nominatim for geocoding (Part 3 only — it's a network call)
