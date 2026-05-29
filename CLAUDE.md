@@ -12,13 +12,15 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
     embed/              FastAPI CLIP ViT-B/32 embedding server — local dev tool only, called by
                         the embedding pipeline stage when semantic clustering is enabled (/pipeline)
   EXECUTIVE-SUMMARY.md   Product overview
-  MVP.md                 MVP feature scope and quality bar
   ARCHITECTURE.md        System design
   IMPLEMENTATION-PLAN.md Implementation plan (supersedes PLAN-v3.md)
+  archived_docs/         Superseded docs kept for reference
+    MVP.md               MVP feature scope and quality bar (MVP stage complete)
+    PHASE-2-DESIGN-INTENT.md  Slideshow renderer design intent + storyboard
 ```
 
 ## Architecture in one paragraph
-**Part 1 (Selection)** runs entirely offline: EXIF extraction → dedup → clustering → ML scoring → hero selection → chapter building → thumbnails + blur scoring. Output is a serialisable Story Skeleton (JSON, embedded thumbnail data URLs, raw GPS coords). **Part 2 (Story)** takes the skeleton and renders a Wrapped-style slideshow: `storyBuilder` assembles cover → chapter dividers → photo cards → coda frames, geocoding turns raw coords into location labels, and `SlideshowPlayer` auto-advances with bundled ambient music. Server features (captions, sharing) are opt-in and only ever receive thumbnails.
+**Part 1 (Selection)** runs entirely offline: EXIF extraction → dedup → clustering → ML scoring → hero selection → chapter building → thumbnails + blur scoring. Output is a serialisable Story Skeleton (JSON, embedded thumbnail data URLs, raw GPS coords). **Part 2 (Curation)** is an interactive review step between selection and playback: the user adjusts the kept set per chapter (starting from the auto-selected heroes) in an L-shape screen — big judgement view, timestamp-neighbour strip, and a building kept set — then hands a filtered skeleton onward. **Part 3 (Assets/Story)** takes the curated skeleton and renders a Wrapped-style slideshow: `storyBuilder` assembles cover → chapter dividers → photo cards → coda frames, geocoding turns raw coords into location labels, and `SlideshowPlayer` auto-advances with bundled ambient music. Server features (captions, sharing) are opt-in and only ever receive thumbnails.
 
 ## Pipeline conventions
 - Stages live in `client/src/lib/pipeline/stages/`
@@ -32,7 +34,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Target: no File references survive past chapter building
 
 ## Key decisions
-- Nominatim for geocoding (Part 2 only — it's a network call)
+- Nominatim for geocoding (Part 3 only — it's a network call)
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
 - Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
@@ -49,7 +51,7 @@ This project has two learning goals: AI-powered application development, and sli
 - Prefer approaches that make AI decisions visible (debug overlay, logging) over black-box integrations
 - After each phase, reflect on what the AI technique contributed that the previous approach could not
 
-**Design:** Phase 2 (Wrapped-style slideshow) is the primary design learning surface:
+**Design:** Part 3 (Wrapped-style slideshow) is the primary design learning surface:
 - Before each renderer PR, study 2–3 Wrapped/slideshow references (Spotify Wrapped, Apple Memories, short-form reels)
 - Form a clear design intent before writing any code
 - Iterate using the `/dev` route — instant visual feedback across all 3 fixture scenarios

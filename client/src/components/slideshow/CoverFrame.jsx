@@ -7,7 +7,7 @@
  * state-machine transition idle → playing.
  *
  * Design intent: celebratory but calm. Big serif trip title, minimal
- * chrome, date range + stat as supporting detail. See PHASE-2-DESIGN-INTENT.md.
+ * chrome, date range + stat as supporting detail. See archived_docs/PHASE-2-DESIGN-INTENT.md.
  */
 
 const MONTH_NAMES = [

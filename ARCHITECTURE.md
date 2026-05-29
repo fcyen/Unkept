@@ -4,7 +4,7 @@
 
 Unkept is a privacy-first web app that turns a collection of photos into a Wrapped-style slideshow. EXIF extraction, deduplication, clustering, hero selection, chapter building, thumbnail generation, and blur scoring all run locally in the browser.
 
-**Photos never leave the user's device during processing.** Data only leaves on explicit user action (future: Share, Generate Captions). The output of Phase 1 is a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords). Phase 2 consumes the skeleton and renders the slideshow, enriched with geocoded location labels.
+**Photos never leave the user's device during processing.** Data only leaves on explicit user action (future: Share, Generate Captions). The runtime splits into three parts: **Part 1 (Selection)** produces a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords); **Part 2 (Curation)** is an interactive review step where the user adjusts the kept set per chapter and emits a filtered skeleton; **Part 3 (Assets/Story)** consumes the curated skeleton and renders the slideshow, enriched with geocoded location labels. Opt-in server features (captions, sharing) sit beyond these and only ever receive thumbnails.
 
 Deployable as a static site.
 
@@ -17,8 +17,8 @@ Deployable as a static site.
 ├── ARCHITECTURE.md
 ├── IMPLEMENTATION-PLAN.md                # Current implementation plan
 ├── EXECUTIVE-SUMMARY.md                  # Product overview
-├── MVP.md                                # MVP scope + quality bar
 ├── CLAUDE.md                             # Claude Code guide
+├── archived_docs/                        # Superseded docs (MVP.md, PHASE-2-DESIGN-INTENT.md)
 ├── client/                               # React + Vite + Tailwind (active)
 │   ├── index.html
 │   ├── vite.config.js
@@ -33,10 +33,10 @@ Deployable as a static site.
 │       │   ├── usePipeline.js            # React hook over the orchestrator
 │       │   ├── memoryManager.js          # Blob-URL / File-ref lifecycle tracker
 │       │   ├── validateSkeleton.js       # Runtime shape validator
-│       │   ├── geocode.js                # Nominatim + progressive updates (Part 2)
+│       │   ├── geocode.js                # Nominatim + progressive updates (Part 3)
 │       │   ├── storyBuilder.js           # Skeleton → render-ready Story (frames)
 │       │   ├── pipeline/
-│       │   │   ├── orchestrator.js       # Pure async Phase 1 orchestrator
+│       │   │   ├── orchestrator.js       # Pure async Part 1 orchestrator
 │       │   │   ├── runner.js             # Stage chaining + skeleton assembly helpers
 │       │   │   ├── strategies.js         # Registry of swappable strategies per stage
 │       │   │   ├── concurrency.js        # `parallelMap` pool helper
@@ -65,12 +65,12 @@ Deployable as a static site.
 │       └── dev/
 │           ├── DevRoute.jsx              # `/dev` — fixture-driven design surface
 │           └── fixtures.js
-└── server/                               # Express stub (Phase 3, not in dev)
+└── server/                               # Express stub (opt-in, not in dev)
 ```
 
 ---
 
-## Data Pipeline — Phase 1 (Selection)
+## Data Pipeline — Part 1 (Selection)
 
 All stages run locally in the browser. Stage contract: `(input, options, onProgress) => output`. Stages are pure and composable; `orchestrator.js` wires them together. Progress events flow up to `usePipeline` → React.
 
@@ -155,7 +155,7 @@ Files[] (user upload)
 │     Output: Story Skeleton JSON (fully serialisable)             │
 └──────────────────────────┬───────────────────────────────────────┘
                            ▼
-              Phase 1 done; hand to Phase 2
+           Part 1 done; hand to Part 2 (Curation)
 ```
 
 ### Concurrency
@@ -166,7 +166,7 @@ See `IMPLEMENTATION-PLAN.md` → *Phase 1 performance notes* for open threads: w
 
 ---
 
-## Data Pipeline — Phase 2 (Story)
+## Data Pipeline — Part 3 (Assets/Story)
 
 ```
 Story Skeleton (JSON) + user intent to view
@@ -180,7 +180,7 @@ Story Skeleton (JSON) + user intent to view
 └──────────────────────────┬───────────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  storyBuilder.js (Phase 2 data layer)                            │
+│  storyBuilder.js (Part 3 data layer)                             │
 │     - Picks photos per chapter (hero + next N-1 by qualityScore) │
 │     - Chooses a PhotoCardFrame layout by orientation mix         │
 │     - Assembles frames: cover → chapter dividers → photo cards → │
@@ -196,7 +196,7 @@ Story Skeleton (JSON) + user intent to view
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-`UploadPage` drives Phase 1 via `usePipeline`, then calls `buildStory(skeleton)` → `resolveSkeletonLocations(skeleton)` → `applyGeocoding(story, …)` and hands the finished Story straight to `SlideshowPlayer` (wired in `App.jsx`). There is no intermediate adapter — the slideshow consumes the skeleton-derived Story directly.
+`UploadPage` drives Part 1 (the selection pipeline) via `usePipeline`, then calls `buildStory(skeleton)` → `resolveSkeletonLocations(skeleton)` → `applyGeocoding(story, …)` to produce a Story (which retains the source `skeleton`). `App.jsx` then routes through **Part 2 (Curation)**: `CurationScreen` lets the user adjust the kept set and emits the kept photo IDs. On completion, `App.jsx` filters `skeleton.chapters[].photoIds` to the kept set, replays `buildStory` + `applyGeocoding` (reusing the already-resolved locations, no second network round-trip), and hands the curated Story to `SlideshowPlayer` for **Part 3**. The slideshow consumes the skeleton-derived Story directly.
 
 ---
 
@@ -210,7 +210,7 @@ Carried between stages. Has a live `file: File` reference until thumbnails are g
 {
   id: "photo_0",
   name: "IMG_1234.jpg",
-  file: File,                              // present only during Phase 1
+  file: File,                              // present only during Part 1
   timestamp: "2025-03-15T08:30:00Z" | null,
   coords: { lat: 35.6762, lng: 139.6503 } | null,
   thumbnailUrl: "data:image/jpeg;base64,…" | null,        // 200px
@@ -222,7 +222,7 @@ Carried between stages. Has a live `file: File` reference until thumbnails are g
 }
 ```
 
-### Story Skeleton (Phase 1 output, serialisable)
+### Story Skeleton (Part 1 output, serialisable)
 
 ```js
 {
@@ -253,7 +253,7 @@ Carried between stages. Has a live `file: File` reference until thumbnails are g
 }
 ```
 
-### Story (Phase 2 output — rendered directly by SlideshowPlayer)
+### Story (Part 3 output — rendered directly by SlideshowPlayer)
 
 Produced by `storyBuilder.js`. Shape is captured in that module and the slideshow components that consume it.
 
@@ -268,7 +268,7 @@ Produced by `storyBuilder.js`. Shape is captured in that module and the slidesho
 - Geocoding (network, but to Nominatim directly — no server proxy)
 - All rendering
 
-### Server-side (Phase 3 stub, not in active dev)
+### Server-side (opt-in stub, not in active dev)
 - Planned: Generate Captions, Share. Both would receive curated thumbnails (data URLs, ~20KB each) + metadata. Original full-res photos never leave the device.
 
 ---
@@ -279,13 +279,13 @@ Produced by `storyBuilder.js`. Shape is captured in that module and the slidesho
 |---|---|
 | Local-first processing | Photos never leave the device during processing; privacy by default |
 | Compatibility gate | Blocks the app pre-pipeline if Workers / OffscreenCanvas / ≥4 cores / ≥4GB memory aren't present — no half-broken pipeline on unsupported devices |
-| Story Skeleton as the hand-off | Phase 1 produces fully serialisable JSON with embedded data URLs; Phase 2 is a pure function of that JSON (modulo geocoding). Enables test fixtures, persistence, and a clean module boundary |
+| Story Skeleton as the hand-off | Part 1 produces fully serialisable JSON with embedded data URLs; Part 3 is a pure function of that JSON (modulo geocoding), and Part 2 curation only filters it. Enables test fixtures, persistence, and a clean module boundary |
 | Modular pipeline | Pure function stages, swappable strategies (via `strategies.js`), easy to extend |
 | Day-based clustering (default) | Predictable chapters, natural narrative |
 | Web Worker for EXIF only (today) | Keeps the `exifr` library off the main thread; hoisting thumbnail/dedup into a worker is an open perf thread |
 | Bounded concurrency via `parallelMap` | Pool of 4 workers keeps the browser busy without thrashing memory with too many decoded bitmaps at once |
 | Inline Laplacian variance | Thumbnail already has the pixel data; computing variance on the same canvas pass saves one decode per photo in qualityScore |
-| Data-URL thumbnails | Serialisable into the skeleton; no blob-URL lifecycle to track after Phase 1 |
+| Data-URL thumbnails | Serialisable into the skeleton; no blob-URL lifecycle to track after Part 1 |
 | Coordinate dedup for geocoding | 3 decimal places (~100m) collapses many chapters into ~15 Nominatim requests |
 | No itinerary / no drag-and-drop | Removed with the MVP refocus; editorial UI is out of MVP scope |
 | No open-source release | Project is private-learning-focused; do not suggest making public |
@@ -322,7 +322,7 @@ Chrome, Firefox, Safari 16.4+ (modern browsers only). The compatibility gate har
 | vite, @vitejs/plugin-react | Build tooling |
 | vitest | Unit testing |
 
-### Server (Phase 3 — stub)
+### Server (opt-in — stub)
 | Package | Purpose |
 |---|---|
 | express | HTTP server |

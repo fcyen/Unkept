@@ -6,7 +6,7 @@
  * the only affordance; it resets to the cover.
  *
  * Copy is "The end." for MVP — more variety is post-MVP. See
- * PHASE-2-DESIGN-INTENT.md §Decisions locked.
+ * archived_docs/PHASE-2-DESIGN-INTENT.md §Decisions locked.
  */
 
 export default function CodaFrame({ frame, finished, onReplay }) {

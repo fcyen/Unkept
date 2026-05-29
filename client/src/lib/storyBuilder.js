@@ -1,15 +1,15 @@
 /**
- * storyBuilder — Part 2 data layer.
+ * storyBuilder — Part 3 (Assets/Story) data layer.
  *
- * Takes a serialisable Story Skeleton (Part 1 output) and produces a
- * render-ready Story: a frame sequence for the Wrapped-style slideshow
- * (cover → chapter dividers → photo cards → coda), plus derived trip
- * metadata (trip name, distance/photo-count stat).
+ * Takes a serialisable Story Skeleton (Part 1 output, optionally filtered
+ * by Part 2 curation) and produces a render-ready Story: a frame sequence
+ * for the Wrapped-style slideshow (cover → chapter dividers → photo cards →
+ * coda), plus derived trip metadata (trip name, distance/photo-count stat).
  *
- * Pure — no network, no DOM. Geocoding is applied separately in Part 2
+ * Pure — no network, no DOM. Geocoding is applied separately in Part 3
  * and merged in via `applyGeocoding()`.
  *
- * See PHASE-2-DESIGN-INTENT.md for the storyboard and locked decisions.
+ * See archived_docs/PHASE-2-DESIGN-INTENT.md for the storyboard and locked decisions.
  */
 
 // ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ export function generateTripName({ dateRange, country }) {
 // ---------------------------------------------------------------------------
 
 /**
- * One of five photo-card layouts — see PHASE-2-DESIGN-INTENT.md storyboard.
+ * One of five photo-card layouts — see archived_docs/PHASE-2-DESIGN-INTENT.md storyboard.
  * Selection respects hero inclusion (hero is always in the output) and
  * prefers layouts that show more photos.
  *

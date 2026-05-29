@@ -4,7 +4,7 @@
  * Design intent: the breath between chapters. Two photos bracket the
  * text band. The photos are already in place when the frame starts;
  * only the text flies in. This lets the divider feel like a transition
- * rather than a new scene. See PHASE-2-DESIGN-INTENT.md.
+ * rather than a new scene. See archived_docs/PHASE-2-DESIGN-INTENT.md.
  *
  * Entry:   text fly-up from below the band (~300ms)
  * Exit:    top photo slides left, bottom photo slides right (~400ms)

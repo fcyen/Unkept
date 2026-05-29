@@ -1,6 +1,6 @@
 # Unkept — Implementation Plan
 
-This plan reflects the revised architecture from the system design review (April 2026). For MVP feature scope and quality bar, see `MVP.md`.
+This plan reflects the revised architecture from the system design review (April 2026). For MVP feature scope and quality bar, see `archived_docs/MVP.md`.
 
 ---
 
@@ -8,9 +8,9 @@ This plan reflects the revised architecture from the system design review (April
 
 | Decision | Detail |
 |---|---|
-| Two-part separation | Part 1 (Selection) is 100% offline, pure computation. Part 2 (Story) handles rendering + enrichment. |
+| Three-part separation | Part 1 (Selection) is 100% offline, pure computation. Part 2 (Curation) is an interactive review step where the user adjusts the kept set. Part 3 (Assets/Story) handles rendering + enrichment. |
 | Part 1 output | Serialisable Story JSON — embedded thumbnail data URLs, raw GPS coords, no geocoded labels |
-| Geocoding lives in Part 2 | Nominatim is a network call; turns raw coords into labels at render time, not selection time |
+| Geocoding lives in Part 3 | Nominatim is a network call; turns raw coords into labels at render time, not selection time |
 | Two-phase pipeline | Phase 1A (cheap: EXIF, dedup, basic cluster) runs first; survey collects user preferences during this time; Phase 1B (expensive: ML scoring, hero select) runs after, informed by survey |
 | Memory management | Revoke blob URLs eagerly after each stage; track lifecycle explicitly |
 | PWA manifest now | Service worker deferred until first ML model is added |
@@ -50,7 +50,7 @@ This plan reflects the revised architecture from the system design review (April
       heroPhotoId: "photo_5",
       date: "2025-03-15",
       coords: { lat: 35.714, lng: 139.797 },  // median GPS of chapter, or null
-      // No title, no location label — those are Part 2 responsibilities
+      // No title, no location label — those are Part 3 responsibilities
     },
     ...
   ],
@@ -76,7 +76,7 @@ This plan reflects the revised architecture from the system design review (April
 }
 ```
 
-### Part 2 — Story (render-time, not serialised)
+### Part 3 — Story (render-time, not serialised)
 
 ```js
 {
@@ -274,7 +274,7 @@ Testing in April 2026 surfaced that the new pipeline feels noticeably slower tha
 - Legacy `StoryView`, `Chapter`, `PhotoLayout`, `TableOfContents`, `FadeIn`, and the `skeletonToLegacyStory` adapter have been removed now that the slideshow consumes the skeleton directly
 - Legacy `lib/exif.js`, `lib/thumbnails.js`, `lib/matcher.js` and orphan `workers/thumbnail.worker.js` removed
 
-### Phase 2 — Story renderer (Part 2) **[MVP]**
+### Phase 2 — Story renderer (Part 3) **[MVP]**
 
 > Primary quality focus for MVP: the slideshow must be showable to others on mobile. This is the highest-care phase.
 >
@@ -282,9 +282,9 @@ Testing in April 2026 surfaced that the new pipeline feels noticeably slower tha
 >
 > **Design learning goal:** UI/UX design — state machines, gesture design, progressive disclosure, micro-interactions, transition animations, trust UX. Primary references: Spotify Wrapped, Apple Memories, Google Photos Memories.
 >
-> See `PHASE-2-DESIGN-INTENT.md` for the design intent and storyboard.
+> See `archived_docs/PHASE-2-DESIGN-INTENT.md` for the design intent and storyboard.
 
-**PR 2A: Part 2 data layer** **[MVP]**
+**PR 2A: Part 3 data layer** **[MVP]**
 - `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story (frames, not blocks)
 - Geocoding stage (Nominatim, progressive, 1 req/s, coord dedup) — MVP blocks slideshow start until geocoding finishes (~7s for typical trip; absorbed by darkroom wait)
 - Trip name generation (country + month + year: "Indonesia, May 2025")
