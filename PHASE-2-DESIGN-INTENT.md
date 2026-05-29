@@ -1,6 +1,6 @@
 # Phase 2 — Design Intent
 
-This doc captures the design direction for Phase 2 (story renderer). For scope and PR breakdown, see `IMPLEMENTATION-PLAN.md`. For MVP constraints, see `MVP.md`.
+This doc captures the design direction for Phase 2 (story renderer). For scope and PR breakdown, see `IMPLEMENTATION-PLAN.md`. For MVP constraints, see `archived_docs/MVP.md`.
 
 ---
 

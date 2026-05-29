@@ -17,8 +17,8 @@ Deployable as a static site.
 ├── ARCHITECTURE.md
 ├── IMPLEMENTATION-PLAN.md                # Current implementation plan
 ├── EXECUTIVE-SUMMARY.md                  # Product overview
-├── MVP.md                                # MVP scope + quality bar
 ├── CLAUDE.md                             # Claude Code guide
+├── archived_docs/                        # Superseded docs (MVP.md — MVP scope + quality bar)
 ├── client/                               # React + Vite + Tailwind (active)
 │   ├── index.html
 │   ├── vite.config.js

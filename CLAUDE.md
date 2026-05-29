@@ -12,9 +12,10 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
     embed/              FastAPI CLIP ViT-B/32 embedding server — local dev tool only, called by
                         the embedding pipeline stage when semantic clustering is enabled (/pipeline)
   EXECUTIVE-SUMMARY.md   Product overview
-  MVP.md                 MVP feature scope and quality bar
   ARCHITECTURE.md        System design
   IMPLEMENTATION-PLAN.md Implementation plan (supersedes PLAN-v3.md)
+  archived_docs/         Superseded docs kept for reference
+    MVP.md               MVP feature scope and quality bar (MVP stage complete)
 ```
 
 ## Architecture in one paragraph
