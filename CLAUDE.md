@@ -16,6 +16,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
   IMPLEMENTATION-PLAN.md Implementation plan (supersedes PLAN-v3.md)
   archived_docs/         Superseded docs kept for reference
     MVP.md               MVP feature scope and quality bar (MVP stage complete)
+    PHASE-2-DESIGN-INTENT.md  Slideshow renderer design intent + storyboard
 ```
 
 ## Architecture in one paragraph

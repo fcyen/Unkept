@@ -282,7 +282,7 @@ Testing in April 2026 surfaced that the new pipeline feels noticeably slower tha
 >
 > **Design learning goal:** UI/UX design — state machines, gesture design, progressive disclosure, micro-interactions, transition animations, trust UX. Primary references: Spotify Wrapped, Apple Memories, Google Photos Memories.
 >
-> See `PHASE-2-DESIGN-INTENT.md` for the design intent and storyboard.
+> See `archived_docs/PHASE-2-DESIGN-INTENT.md` for the design intent and storyboard.
 
 **PR 2A: Part 3 data layer** **[MVP]**
 - `lib/storyBuilder.js` — takes Story Skeleton, produces render-ready Story (frames, not blocks)

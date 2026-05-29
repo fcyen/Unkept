@@ -11,7 +11,7 @@
  * rather than loaded. Duration: ~4.5s (owner: SlideshowPlayer).
  *
  * Captions are out of MVP — text lives on chapter dividers only.
- * See PHASE-2-DESIGN-INTENT.md.
+ * See archived_docs/PHASE-2-DESIGN-INTENT.md.
  */
 
 export default function PhotoCardFrame({ frame, photos }) {
