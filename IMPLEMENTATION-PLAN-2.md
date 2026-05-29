@@ -257,11 +257,3 @@ deprecated plan, in sequence:
 - **Framework progression (raw-first):** Anthropic SDK (primitives → tool use) →
   Vercel AI SDK (streaming into React) → Claude Agent SDK (multi-agent). Avoid
   LangChain / LlamaIndex until the raw SDK is understood.
-- **Remaining Part 3 backlog:** live photos from burst groups (PR 2G);
-  photo-swap interaction recording `swapHistory` (PR 2E).
-
-### Dev assets to (re)build
-
-- **Fixture photo library** (~50 real photos with known properties: exact-dup
-  pair, near-dup burst with hamming ≤ 5, blurry/sharp pair, no-EXIF, no-GPS, span
-  of 3+ calendar days) for pipeline + perf testing. May not exist yet.
