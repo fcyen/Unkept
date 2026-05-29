@@ -107,20 +107,3 @@ Unkept is a personal project with two goals: building something genuinely useful
 ## Distribution
 
 The app ships as a static web app — no install, no account, just a URL. A PWA layer (installable to home screen, offline ML model caching) is planned once the first ML model ships. Mobile-first responsive design is the baseline; the curation flow and slideshow should feel as natural on a phone as in a desktop browser.
-
----
-
-## What Has Been Built
-
-Phase 1 (Selection) and Phase 2B (Slideshow playback) are wired end-to-end:
-
-- Photo upload with drag-and-drop and a cycling per-stage status indicator
-- Compatibility gate (Workers, OffscreenCanvas, ≥4 cores, ≥4 GB memory)
-- EXIF extraction in a Web Worker, two-pass deduplication, day-based clustering
-- OffscreenCanvas thumbnail generation with inline Laplacian-variance blur scoring
-- Hero selection + chapter builder → serialisable Story Skeleton
-- `storyBuilder` assembles cover → chapter dividers → photo cards → coda frames
-- Nominatim geocoding (1 req/s, coord-deduped) folds labels back into the story
-- `SlideshowPlayer` auto-advances through frames with bundled ambient music
-
-**Not yet built:** goal-setting modal, L-shape review UI, photo editing (brightness, warmth, crop), look application, break timer, export modes, ML-based selection (NIMA, face detection, CLIP), sharing, PWA support.
