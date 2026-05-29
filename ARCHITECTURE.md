@@ -4,7 +4,9 @@
 
 Unkept is a privacy-first web app that turns a collection of photos into a Wrapped-style slideshow. EXIF extraction, deduplication, clustering, hero selection, chapter building, thumbnail generation, and blur scoring all run locally in the browser.
 
-**Photos never leave the user's device during processing.** Data only leaves on explicit user action (future: Share, Generate Captions). The output of Phase 1 is a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords). Phase 2 consumes the skeleton and renders the slideshow, enriched with geocoded location labels.
+**Photos never leave the user's device during processing.** Data only leaves on explicit user action (future: Share, Generate Captions). The runtime splits into three parts: **Part 1 (Selection)** produces a serialisable **Story Skeleton** (JSON with embedded data-URL thumbnails and raw GPS coords); **Part 2 (Curation)** is an interactive review step where the user adjusts the kept set per chapter and emits a filtered skeleton; **Part 3 (Assets/Story)** consumes the curated skeleton and renders the slideshow, enriched with geocoded location labels.
+
+> Note: the data-pipeline sections below predate the curation step and still label the offline selection pipeline "Phase 1" and the renderer "Phase 2" — these map to **Part 1** and **Part 3** respectively. Part 2 (Curation) sits between them and is documented in the components, not the pipeline.
 
 Deployable as a static site.
 
@@ -33,7 +35,7 @@ Deployable as a static site.
 │       │   ├── usePipeline.js            # React hook over the orchestrator
 │       │   ├── memoryManager.js          # Blob-URL / File-ref lifecycle tracker
 │       │   ├── validateSkeleton.js       # Runtime shape validator
-│       │   ├── geocode.js                # Nominatim + progressive updates (Part 2)
+│       │   ├── geocode.js                # Nominatim + progressive updates (Part 3)
 │       │   ├── storyBuilder.js           # Skeleton → render-ready Story (frames)
 │       │   ├── pipeline/
 │       │   │   ├── orchestrator.js       # Pure async Phase 1 orchestrator
@@ -196,7 +198,7 @@ Story Skeleton (JSON) + user intent to view
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-`UploadPage` drives Phase 1 via `usePipeline`, then calls `buildStory(skeleton)` → `resolveSkeletonLocations(skeleton)` → `applyGeocoding(story, …)` and hands the finished Story straight to `SlideshowPlayer` (wired in `App.jsx`). There is no intermediate adapter — the slideshow consumes the skeleton-derived Story directly.
+`UploadPage` drives Part 1 (the selection pipeline) via `usePipeline`, then calls `buildStory(skeleton)` → `resolveSkeletonLocations(skeleton)` → `applyGeocoding(story, …)` to produce a Story (which retains the source `skeleton`). `App.jsx` then routes through **Part 2 (Curation)**: `CurationScreen` lets the user adjust the kept set and emits the kept photo IDs. On completion, `App.jsx` filters `skeleton.chapters[].photoIds` to the kept set, replays `buildStory` + `applyGeocoding` (reusing the already-resolved locations, no second network round-trip), and hands the curated Story to `SlideshowPlayer` for **Part 3**. The slideshow consumes the skeleton-derived Story directly.
 
 ---
 
