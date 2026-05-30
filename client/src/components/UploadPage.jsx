@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePipeline, PHASES } from '../lib/usePipeline.js';
-import { buildStory, applyGeocoding } from '../lib/storyBuilder.js';
-import { resolveSkeletonLocations } from '../lib/geocode.js';
+import { buildStory } from '../lib/storyBuilder.js';
 
 // Each pipeline stage cycles through several phrasings while it runs, so
 // the button feels alive instead of stuck on a single sentence.
@@ -50,10 +49,9 @@ export default function UploadPage({ onStoryReady }) {
   const [photos, setPhotos] = useState([]);
   const [previews, setPreviews] = useState([]); // blob URLs for preview grid
   const [error, setError] = useState('');
-  const [geocodingProgress, setGeocodingProgress] = useState(null);
-  // Covers the post-pipeline finalization (story build + geocoding) so the
-  // CTA stays disabled all the way through to the curation screen, instead
-  // of re-activating briefly between phase=DONE and the navigation.
+  // Covers the post-pipeline finalization (story build) so the CTA stays
+  // disabled all the way through to the curation screen, instead of
+  // re-activating briefly between phase=DONE and the navigation.
   const [finalizing, setFinalizing] = useState(false);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
@@ -66,39 +64,27 @@ export default function UploadPage({ onStoryReady }) {
       pipeline.phase !== PHASES.DONE &&
       pipeline.phase !== PHASES.ERROR);
 
-  // When the skeleton lands, build the Story, run geocoding, fold the
-  // labels back in, and hand the result to SlideshowPlayer.
+  // When the skeleton lands, build the Story and hand it to curation.
+  // Geocoding is intentionally skipped on this path — chapters render as
+  // "Day N" until/unless an opt-in progressive geocoder fills labels later.
   useEffect(() => {
     if (!pipeline.result) return;
     if (handledResultRef.current === pipeline.result) return;
     handledResultRef.current = pipeline.result;
 
-    (async () => {
-      setFinalizing(true);
-      try {
-        const skeleton = pipeline.result;
-        let story = buildStory(skeleton);
+    setFinalizing(true);
+    try {
+      const story = buildStory(pipeline.result);
 
-        setGeocodingProgress({ done: 0, total: skeleton.chapters.length });
-        const { chapterLocations, country } = await resolveSkeletonLocations(
-          skeleton,
-          (done, total) => setGeocodingProgress({ done, total }),
-        );
-        setGeocodingProgress(null);
+      previews.forEach((url) => URL.revokeObjectURL(url));
+      setPreviews([]);
+      setPhotos([]);
 
-        story = applyGeocoding(story, { chapterLocations, country });
-
-        previews.forEach((url) => URL.revokeObjectURL(url));
-        setPreviews([]);
-        setPhotos([]);
-
-        onStoryReady(story);
-      } catch (err) {
-        setError(err.message || 'Failed to finish story.');
-        setGeocodingProgress(null);
-        setFinalizing(false);
-      }
-    })();
+      onStoryReady(story);
+    } catch (err) {
+      setError(err.message || 'Failed to finish story.');
+      setFinalizing(false);
+    }
   }, [pipeline.result, previews, onStoryReady]);
 
   useEffect(() => {
@@ -231,7 +217,6 @@ export default function UploadPage({ onStoryReady }) {
         <ProgressButton
           processing={processing}
           pipeline={pipeline}
-          geocodingProgress={geocodingProgress}
           onClick={handleGenerate}
           hasPhotos={photos.length > 0}
         />
@@ -245,19 +230,14 @@ export default function UploadPage({ onStoryReady }) {
  * timer so the UI feels alive even when a stage holds the main thread for
  * a few seconds.
  */
-function ProgressButton({ processing, pipeline, geocodingProgress, onClick, hasPhotos }) {
-  const stage = geocodingProgress
-    ? 'geocoding'
-    : pipeline.progress?.stage || (processing ? 'starting' : null);
+function ProgressButton({ processing, pipeline, onClick, hasPhotos }) {
+  const stage = pipeline.progress?.stage || (processing ? 'starting' : null);
 
-  const phrase = useCyclingPhrase(stage, processing && !geocodingProgress);
+  const phrase = useCyclingPhrase(stage, processing);
 
   let label;
   if (!processing) {
     label = 'Start curating';
-  } else if (geocodingProgress) {
-    const { done, total } = geocodingProgress;
-    label = `Resolving locations… ${done}/${total}`;
   } else {
     const p = pipeline.progress;
     const counter = p && p.total > 0 ? ` ${p.progress}/${p.total}` : '';
