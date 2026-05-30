@@ -34,7 +34,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Target: no File references survive past chapter building
 
 ## Key decisions
-- Nominatim for geocoding (Part 3 only — it's a network call)
+- Nominatim for geocoding (network call). Currently dormant: not invoked on the curation path — chapters render as "Day N". `geocode.js` + `applyGeocoding` remain in place for a future opt-in, progressive label enrichment (labelling only, never chapter separation).
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
 - Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
