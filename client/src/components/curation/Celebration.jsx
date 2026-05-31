@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { downloadCuratedPhotos } from '../../lib/curatedDownload.js';
+import { FEATURES } from '../../config.js';
 
 function Confetti() {
   const pieces = useMemo(
@@ -62,15 +63,17 @@ export default function Celebration({
           <div className="l">Goal</div>
         </div>
       </div>
-      <button className="cta" onClick={onContinue} type="button">
-        Play your story
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M3 1l9 6-9 6V1z" fill="#1A1714" />
-        </svg>
-      </button>
+      {FEATURES.slideshow && (
+        <button className="cta" onClick={onContinue} type="button">
+          Play your story
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M3 1l9 6-9 6V1z" fill="#1A1714" />
+          </svg>
+        </button>
+      )}
       {downloadable.length > 0 && (
         <button
-          className="download"
+          className={FEATURES.slideshow ? 'download' : 'cta'}
           onClick={() => downloadCuratedPhotos(downloadable, tripName)}
           type="button"
         >

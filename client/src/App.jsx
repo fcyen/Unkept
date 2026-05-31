@@ -5,6 +5,7 @@ import CurationScreen from './components/curation/CurationScreen.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
 import { buildStory, applyGeocoding } from './lib/storyBuilder.js';
+import { FEATURES } from './config.js';
 
 // Debug routes are lazy-imported and only resolved when MODE === 'debug'.
 // Vite replaces import.meta.env.MODE with a literal string at build time,
@@ -73,7 +74,7 @@ export default function App() {
     return <CompatibilityBlock checks={compatibility.checks} />;
   }
 
-  if (curated) {
+  if (FEATURES.slideshow && curated) {
     return (
       <SlideshowPlayer
         story={curated}
@@ -87,7 +88,9 @@ export default function App() {
       <CurationScreen
         story={story}
         onBack={() => setStory(null)}
-        onComplete={({ keptIds }) => setCurated(curateStory(story, keptIds))}
+        onComplete={FEATURES.slideshow
+          ? ({ keptIds }) => setCurated(curateStory(story, keptIds))
+          : undefined}
       />
     );
   }
