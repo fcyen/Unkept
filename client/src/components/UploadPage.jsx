@@ -57,6 +57,11 @@ export default function UploadPage({ onStoryReady }) {
   const [finalizing, setFinalizing] = useState(false);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
+  // File handles for the photos submitted to the pipeline, keyed by the
+  // synthetic ids the pipeline assigns (photo_${index}). Passed to App on
+  // story completion so the kept set can be exported at full resolution
+  // — the File object is a lazy disk handle, decoded only on read.
+  const originalsRef = useRef(null);
 
   const pipeline = usePipeline();
 
@@ -92,7 +97,8 @@ export default function UploadPage({ onStoryReady }) {
         setPreviews([]);
         setPhotos([]);
 
-        onStoryReady(story);
+        onStoryReady(story, originalsRef.current);
+        originalsRef.current = null;
       } catch (err) {
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
@@ -141,6 +147,9 @@ export default function UploadPage({ onStoryReady }) {
       return;
     }
     setError('');
+    originalsRef.current = new Map(
+      photos.map((file, i) => [`photo_${i}`, file]),
+    );
     pipeline.start(photos);
   };
 

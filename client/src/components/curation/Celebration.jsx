@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { downloadCuratedPhotos } from '../../lib/curatedDownload.js';
 
 function Confetti() {
@@ -34,12 +34,23 @@ export default function Celebration({
   chapterCount,
   tripName,
   keptPhotos = [],
+  originals,
   onContinue,
   onKeepRefining,
 }) {
+  const [downloading, setDownloading] = useState(false);
   const downloadable = keptPhotos.filter(
-    (p) => p.thumbnailHeroUrl || p.thumbnailUrl,
+    (p) => originals?.has(p.id) || p.thumbnailHeroUrl || p.thumbnailUrl,
   );
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadCuratedPhotos(downloadable, tripName, originals);
+    } finally {
+      setDownloading(false);
+    }
+  };
   return (
     <div className="curation-celebrate">
       <Confetti />
@@ -71,7 +82,8 @@ export default function Celebration({
       {downloadable.length > 0 && (
         <button
           className="download"
-          onClick={() => downloadCuratedPhotos(downloadable, tripName)}
+          onClick={handleDownload}
+          disabled={downloading}
           type="button"
         >
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -83,7 +95,9 @@ export default function Celebration({
               strokeLinejoin="round"
             />
           </svg>
-          Download {downloadable.length} photo{downloadable.length === 1 ? '' : 's'}
+          {downloading
+            ? 'Preparing zip…'
+            : `Download ${downloadable.length} photo${downloadable.length === 1 ? '' : 's'}`}
         </button>
       )}
       <button className="ghost" onClick={onKeepRefining} type="button">
