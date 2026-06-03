@@ -59,7 +59,7 @@ This project has two learning goals: AI-powered application development, and sli
 - Design skills in scope: frame pacing and timing, typographic hierarchy on full-bleed imagery, music-synced motion, auto-advance rhythm, mobile-first responsive design, subtle transitions between frames
 
 ## Branch
-Develop on `main`. Feature branches off `main`, merged back via PR. Phase 1 work currently lives on `claude/phase-1-implementation`.
+Develop on `main`. Feature branches off `main`, merged back via PR.
 
 ## Dev
 ```
