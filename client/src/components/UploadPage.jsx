@@ -272,7 +272,9 @@ export default function UploadPage({ onStoryReady }) {
         />
       </div>
 
-      {surveyOpen && <Survey onSubmit={handleSurveyDone} />}
+      {surveyOpen && (
+        <Survey onSubmit={handleSurveyDone} photoCount={photos.length} />
+      )}
     </div>
   );
 }
