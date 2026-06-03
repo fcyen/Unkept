@@ -13,7 +13,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
                         the embedding pipeline stage when semantic clustering is enabled (/pipeline)
   EXECUTIVE-SUMMARY.md   Product overview
   ARCHITECTURE.md        System design
-  IMPLEMENTATION-PLAN.md Implementation plan (supersedes PLAN-v3.md)
+  IMPLEMENTATION-PLAN-2.md Active plan of record (pre-demo; supersedes IMPLEMENTATION-PLAN.md)
   archived_docs/         Superseded docs kept for reference
     MVP.md               MVP feature scope and quality bar (MVP stage complete)
     PHASE-2-DESIGN-INTENT.md  Slideshow renderer design intent + storyboard

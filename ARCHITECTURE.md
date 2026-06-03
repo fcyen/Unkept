@@ -15,7 +15,7 @@ Deployable as a static site.
 ```
 /  (repo root)
 ├── ARCHITECTURE.md
-├── IMPLEMENTATION-PLAN.md                # Current implementation plan
+├── IMPLEMENTATION-PLAN-2.md              # Active plan of record (pre-demo)
 ├── EXECUTIVE-SUMMARY.md                  # Product overview
 ├── CLAUDE.md                             # Claude Code guide
 ├── archived_docs/                        # Superseded docs (MVP.md, PHASE-2-DESIGN-INTENT.md)
@@ -162,7 +162,7 @@ Files[] (user upload)
 
 Stages that were previously `for … await` now use `parallelMap` from `lib/pipeline/concurrency.js`, which runs up to 4 photos in flight at a time. dedup pass 1 (byte hash), dedup pass 2 (perceptual hash), thumbnail, and qualityScore all use this. The merge in dedup pass 2 runs sequentially over photos sorted by filename — for each photo we scan the last 5 kept reps for a hamming match, picking the closest one if any are within threshold.
 
-See `IMPLEMENTATION-PLAN.md` → *Phase 1 performance notes* for open threads: worker hoist for thumbnail/dedup, combining dedup pass 2 with thumbnail decode (both decode each file today), and benchmarking the pool size.
+See `IMPLEMENTATION-PLAN-2.md` → *Appendix → Open performance threads* for the open items: worker hoist for thumbnail/dedup, combining dedup pass 2 with thumbnail decode (both decode each file today), and benchmarking the pool size.
 
 ---
 
@@ -301,7 +301,7 @@ Produced by `storyBuilder.js`. Shape is captured in that module and the slidesho
 | 2,000  | 10–20s processing, UI stays responsive |
 | 5,000  | 30–60s processing, UI stays responsive |
 
-April 2026 testing: the new pipeline (with dedup + blur scoring + two-pass hashing) does roughly 3× more work per photo than the pre-Phase 1 impl. Mitigations shipped: concurrency 4, inline variance, 400px tier disabled. See `IMPLEMENTATION-PLAN.md` → *Phase 1 performance notes* for the open threads.
+April 2026 testing: the new pipeline (with dedup + blur scoring + two-pass hashing) does roughly 3× more work per photo than the pre-Phase 1 impl. Mitigations shipped: concurrency 4, inline variance, 400px tier disabled. See `IMPLEMENTATION-PLAN-2.md` → *Appendix → Open performance threads* for the open items.
 
 ---
 
