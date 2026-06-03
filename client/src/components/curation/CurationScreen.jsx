@@ -103,7 +103,7 @@ function ambientClass(kept, target) {
   return 'over';
 }
 
-export default function CurationScreen({ story, onComplete, onBack }) {
+export default function CurationScreen({ story, originals, onComplete, onBack }) {
   const vm = useMemo(() => buildViewModel(story), [story]);
   const { chapters, photoById, photosByChapter, tripName, dateLabel } = vm;
 
@@ -304,6 +304,7 @@ export default function CurationScreen({ story, onComplete, onBack }) {
           chapterCount={chapters.length}
           tripName={tripName}
           keptPhotos={keptPhotos}
+          originals={originals}
           onContinue={() => {
             setShowCelebrate(false);
             onComplete && onComplete({ keptIds: [...kept] });
