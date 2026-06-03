@@ -5,6 +5,7 @@ import CurationScreen from './components/curation/CurationScreen.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
 import { buildStory, applyGeocoding } from './lib/storyBuilder.js';
+import { FEATURES } from './config.js';
 
 // Debug routes are lazy-imported and only resolved when MODE === 'debug'.
 // Vite replaces import.meta.env.MODE with a literal string at build time,
@@ -77,7 +78,7 @@ export default function App() {
     return <CompatibilityBlock checks={compatibility.checks} />;
   }
 
-  if (curated) {
+  if (FEATURES.slideshow && curated) {
     return (
       <SlideshowPlayer
         story={curated}
@@ -92,22 +93,19 @@ export default function App() {
         story={story}
         originals={originals}
         onBack={() => { setStory(null); setOriginals(null); }}
-        onComplete={({ keptIds }) => {
-          if (originals) {
-            const keptSet = new Set(keptIds);
-            const pruned = new Map();
-            for (const id of keptIds) {
-              const file = originals.get(id);
-              if (file) pruned.set(id, file);
+        onComplete={FEATURES.slideshow
+          ? ({ keptIds }) => {
+              if (originals) {
+                const pruned = new Map();
+                for (const id of keptIds) {
+                  const file = originals.get(id);
+                  if (file) pruned.set(id, file);
+                }
+                setOriginals(pruned);
+              }
+              setCurated(curateStory(story, keptIds));
             }
-            // Drop references to non-kept files so they can be GC'd.
-            for (const id of originals.keys()) {
-              if (!keptSet.has(id)) originals.delete(id);
-            }
-            setOriginals(pruned);
-          }
-          setCurated(curateStory(story, keptIds));
-        }}
+          : undefined}
       />
     );
   }

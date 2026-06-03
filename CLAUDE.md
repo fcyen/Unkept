@@ -38,6 +38,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
 - Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
+- Part 3 (slideshow playback) is gated behind `FEATURES.slideshow` in `client/src/config.js`. Off in the production flow — curation's Celebration screen ends on a download CTA, no slideshow. The renderer still ships in the bundle and `/dev` always exercises it so design iteration continues independent of the flag.
 
 ## Dev tooling
 - `/pipeline` route renders per-stage debug snapshots. The dedup stage in particular surfaces hamming distances on every card and shows the 8×8 block-mean tile that the hash actually sees, side-by-side with the original thumbnail. When tuning a perceptual stage, work from this view rather than guessing.

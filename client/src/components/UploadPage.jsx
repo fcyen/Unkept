@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePipeline, PHASES } from '../lib/usePipeline.js';
 import { buildStory, applyGeocoding } from '../lib/storyBuilder.js';
 import { resolveSkeletonLocations } from '../lib/geocode.js';
+import Survey from './Survey.jsx';
 
 // Each pipeline stage cycles through several phrasings while it runs, so
 // the button feels alive instead of stuck on a single sentence.
@@ -55,6 +56,11 @@ export default function UploadPage({ onStoryReady }) {
   // CTA stays disabled all the way through to the curation screen, instead
   // of re-activating briefly between phase=DONE and the navigation.
   const [finalizing, setFinalizing] = useState(false);
+  // Survey runs concurrently with Phase 1; we hold the pipeline result until
+  // the survey has been submitted (or skipped/timed out) so its responses can
+  // be merged into the skeleton meta before curation.
+  const [surveyOpen, setSurveyOpen] = useState(false);
+  const [surveyResponses, setSurveyResponses] = useState(null);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
   // File handles for the photos submitted to the pipeline, keyed by the
@@ -67,21 +73,35 @@ export default function UploadPage({ onStoryReady }) {
 
   const processing =
     finalizing ||
+    surveyOpen ||
     (pipeline.phase !== PHASES.IDLE &&
       pipeline.phase !== PHASES.DONE &&
       pipeline.phase !== PHASES.ERROR);
 
   // When the skeleton lands, build the Story, run geocoding, fold the
-  // labels back in, and hand the result to SlideshowPlayer.
+  // labels back in, and hand the result to SlideshowPlayer. We hold off
+  // until the survey is closed so its responses can be merged into the
+  // skeleton — if the user takes their time, the pipeline result simply
+  // waits here.
   useEffect(() => {
     if (!pipeline.result) return;
+    if (surveyOpen || !surveyResponses) return;
     if (handledResultRef.current === pipeline.result) return;
     handledResultRef.current = pipeline.result;
 
     (async () => {
       setFinalizing(true);
       try {
-        const skeleton = pipeline.result;
+        const skeleton = {
+          ...pipeline.result,
+          meta: {
+            ...pipeline.result.meta,
+            surveyResponses: {
+              ...(pipeline.result.meta?.surveyResponses || {}),
+              ...surveyResponses,
+            },
+          },
+        };
         let story = buildStory(skeleton);
 
         setGeocodingProgress({ done: 0, total: skeleton.chapters.length });
@@ -92,6 +112,11 @@ export default function UploadPage({ onStoryReady }) {
         setGeocodingProgress(null);
 
         story = applyGeocoding(story, { chapterLocations, country });
+        // Survey trip name beats the auto-generated "Country, Month YYYY" —
+        // apply last so applyGeocoding's country override doesn't clobber it.
+        if (surveyResponses.tripName) {
+          story = { ...story, tripName: surveyResponses.tripName };
+        }
 
         previews.forEach((url) => URL.revokeObjectURL(url));
         setPreviews([]);
@@ -105,10 +130,13 @@ export default function UploadPage({ onStoryReady }) {
         setFinalizing(false);
       }
     })();
-  }, [pipeline.result, previews, onStoryReady]);
+  }, [pipeline.result, previews, onStoryReady, surveyOpen, surveyResponses]);
 
   useEffect(() => {
-    if (pipeline.error) setError(pipeline.error.message || 'Pipeline failed.');
+    if (pipeline.error) {
+      setError(pipeline.error.message || 'Pipeline failed.');
+      setSurveyOpen(false);
+    }
   }, [pipeline.error]);
 
   const addPhotos = (files) => {
@@ -150,7 +178,14 @@ export default function UploadPage({ onStoryReady }) {
     originalsRef.current = new Map(
       photos.map((file, i) => [`photo_${i}`, file]),
     );
+    setSurveyResponses(null);
+    setSurveyOpen(true);
     pipeline.start(photos);
+  };
+
+  const handleSurveyDone = (responses) => {
+    setSurveyResponses(responses);
+    setSurveyOpen(false);
   };
 
   return (
@@ -245,6 +280,10 @@ export default function UploadPage({ onStoryReady }) {
           hasPhotos={photos.length > 0}
         />
       </div>
+
+      {surveyOpen && (
+        <Survey onSubmit={handleSurveyDone} photoCount={photos.length} />
+      )}
     </div>
   );
 }
