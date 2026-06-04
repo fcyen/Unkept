@@ -72,7 +72,9 @@ function corsHeaders(): HeadersInit {
   return {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Allow-Headers": "content-type, authorization, apikey, x-client-info",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
   };
 }
 

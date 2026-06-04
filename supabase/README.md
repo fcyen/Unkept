@@ -53,6 +53,12 @@ supabase/
    ```
    supabase functions deploy track
    ```
+   The Function is intentionally **public + anonymous** — JWT verification
+   is turned off via `supabase/config.toml` (`[functions.track] verify_jwt
+   = false`). If you skip the config file, the platform will reject every
+   request with a 401 before our handler runs, which the browser surfaces
+   as a misleading CORS error. The deploy command picks up the config
+   automatically.
 
 5. **Point the client at it** (Netlify build env, or client/.env.local) — set
    **both** env vars and trigger a fresh Netlify deploy. Vite inlines these at
