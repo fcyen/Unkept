@@ -13,7 +13,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ALLOWED_ORIGIN = Deno.env.get("TELEMETRY_ALLOWED_ORIGIN") || "*";
+// Strip any trailing slash — the browser's Origin header never has one,
+// and `Access-Control-Allow-Origin` must match it byte-for-byte. A stray
+// slash in the configured value (easy to add by accident) silently breaks
+// every preflight with a misleading CORS error.
+const ALLOWED_ORIGIN =
+  (Deno.env.get("TELEMETRY_ALLOWED_ORIGIN") || "*").replace(/\/+$/, "");
 
 // Caps — reject obviously abusive payloads outright.
 const MAX_EVENTS_PER_BATCH = 50;
