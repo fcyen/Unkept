@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePipeline, PHASES } from '../lib/usePipeline.js';
 import { buildStory, applyGeocoding } from '../lib/storyBuilder.js';
 import { resolveSkeletonLocations } from '../lib/geocode.js';
+import { track } from '../lib/analytics.js';
 import Survey from './Survey.jsx';
 
 // Each pipeline stage cycles through several phrasings while it runs, so
@@ -180,6 +181,7 @@ export default function UploadPage({ onStoryReady }) {
     );
     setSurveyResponses(null);
     setSurveyOpen(true);
+    track('photos_uploaded', { count: photos.length });
     pipeline.start(photos);
   };
 
