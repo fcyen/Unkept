@@ -8,7 +8,7 @@ export const FEATURES = {
   // only. When off, `track()` is a no-op and nothing is sent — the app
   // makes no network call. Anonymous, non-identifying counts only; see
   // client/src/lib/analytics.js for the privacy guardrails.
-  betaTelemetry: false,
+  betaTelemetry: true,
 };
 
 // Public URL of the Supabase Edge Function that ingests telemetry. This is
