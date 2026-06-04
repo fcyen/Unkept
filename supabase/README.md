@@ -6,14 +6,15 @@ browser never touches the database.
 
 ```
 browser → track() (batched, flushed on page hide)
-        → POST  https://<PROJECT_REF>.supabase.co/functions/v1/track
+        → POST  https://toowkevypophimsmvfdf.supabase.co/functions/v1/track
         → Edge Function (validate, strip IP, bucket UA, rate-limit)
         → service-role insert → public.events
 ```
 
-The Supabase project ref is intentionally kept out of the repo. Substitute
-your own `<PROJECT_REF>` below — `supabase link` (step 1) stores it locally in
-the gitignored `supabase/.temp/`, so it never needs to be committed.
+Project ref: `toowkevypophimsmvfdf`. Not treated as a secret — the deployed
+Function URL above is visible to any browser hitting the production site, so
+scrubbing it from the repo would buy no security and cost copy-paste-ability
+in the setup steps below.
 
 ## Layout
 
@@ -29,7 +30,7 @@ supabase/
    ```
    npm install -g supabase
    supabase login
-   supabase link --project-ref <PROJECT_REF>
+   supabase link --project-ref toowkevypophimsmvfdf
    ```
 
 2. **Apply the migration** (creates `events`, RLS, and the views)
@@ -65,7 +66,7 @@ supabase/
    build time, so existing bundles won't pick them up until rebuilt.
    ```
    VITE_BETA_TELEMETRY=true
-   VITE_TELEMETRY_ENDPOINT=https://<PROJECT_REF>.supabase.co/functions/v1/track
+   VITE_TELEMETRY_ENDPOINT=https://toowkevypophimsmvfdf.supabase.co/functions/v1/track
    ```
    Both must be present (and `VITE_BETA_TELEMETRY` must be the literal string
    `true`) or telemetry stays inert. To verify in a deployed bundle, view the
