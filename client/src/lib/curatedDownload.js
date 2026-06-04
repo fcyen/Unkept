@@ -3,9 +3,10 @@
  * browser as a download. Everything runs locally — no network, no upload —
  * in keeping with Unkept's privacy-first design.
  *
- * The best image available at curation time is the 1000px hero thumbnail
- * (`thumbnailHeroUrl`); the original full-resolution File bytes are revoked
- * earlier in the pipeline, so they cannot be re-exported here.
+ * Originals are streamed straight from their File handles (held by App for
+ * the kept set's lifetime), so the exported archive is full-resolution. If
+ * an original isn't available (e.g. dev fixtures), the ≤1000px hero
+ * thumbnail is used as a fallback.
  */
 
 import { createZip } from './zip.js';
@@ -23,6 +24,11 @@ function sanitizeBase(name) {
   return cleaned || 'photo';
 }
 
+function extensionFor(name, fallback = '.jpg') {
+  const match = (name || '').match(/\.([a-zA-Z0-9]+)$/);
+  return match ? `.${match[1].toLowerCase()}` : fallback;
+}
+
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -35,18 +41,30 @@ function triggerDownload(blob, filename) {
 }
 
 /**
- * Build and download a ZIP of the kept photos.
+ * Build and download a ZIP of the kept photos. Reads the original File
+ * bytes one at a time so peak memory stays close to a single image's
+ * size, not the whole kept set decoded at once.
  *
  * @param {{ id: string, name?: string, thumbnailHeroUrl?: string, thumbnailUrl?: string }[]} photos
  * @param {string} [tripName] used to name the archive
- * @returns {number} count of photos written to the archive
+ * @param {Map<string, File>} [originals] kept-id → File map (full-res source)
+ * @returns {Promise<number>} count of photos written to the archive
  */
-export function downloadCuratedPhotos(photos, tripName) {
+export async function downloadCuratedPhotos(photos, tripName, originals) {
   const entries = [];
   for (const photo of photos) {
-    const url = photo.thumbnailHeroUrl || photo.thumbnailUrl;
-    if (!url) continue; // thumbnail failed to decode upstream — nothing to export
     const prefix = String(entries.length + 1).padStart(2, '0');
+    const original = originals?.get(photo.id);
+    if (original) {
+      const buf = await original.arrayBuffer();
+      entries.push({
+        name: `${prefix}-${sanitizeBase(photo.name || original.name)}${extensionFor(original.name)}`,
+        data: new Uint8Array(buf),
+      });
+      continue;
+    }
+    const url = photo.thumbnailHeroUrl || photo.thumbnailUrl;
+    if (!url) continue; // no original and no thumbnail — nothing to export
     entries.push({
       name: `${prefix}-${sanitizeBase(photo.name)}.jpg`,
       data: dataUrlToBytes(url),

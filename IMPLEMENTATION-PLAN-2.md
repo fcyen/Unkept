@@ -1,0 +1,259 @@
+# Unkept — Implementation Plan 2 (Pre-Demo)
+
+This plan captures a working session (May 2026) reviewing the state of the app
+ahead of opening it for a demo. It **supersedes `IMPLEMENTATION-PLAN.md`** as the
+active plan of record.
+
+**Learning goals carried forward (from `IMPLEMENTATION-PLAN.md` / CLAUDE.md):**
+the project's two learning goals still govern — AI-powered app development
+(understanding over convenience: raw SDK before frameworks, heuristics before ML,
+AI decisions made *visible*) and slideshow/motion design (Part 3). Part 3's
+design work is paused while it's hidden for the demo; the AI learning goal
+continues to apply to the curation and pipeline work below (e.g. the "developing"
+preview grid in Part B makes pipeline decisions visible).
+
+The two focus areas, in priority order:
+
+1. **Curation UI changes** — the demo's primary surface (highest priority)
+2. **Performance / loading fix** — the wait after "Start curating" (second)
+
+---
+
+## Context & decisions
+
+These framed the work below and are recorded so the rationale isn't lost.
+
+| Topic | Decision | Rationale |
+|---|---|---|
+| **PWA vs native iOS** | **Stay PWA for now.** Revisit native only after real product signal. | The one strong argument for native is Safari's ~1–2GB memory ceiling (the app holds image bitmaps). But a Swift rewrite pulls hard against the project's stated learning goals (AI app dev + slideshow/motion design) and loses the "it's just a URL" demo friction. Mitigate memory within the PWA (eager blob revocation, two-phase thumbnails) instead. |
+| **Part 3 (slideshow) for the demo** | **Hide it from the main user flow**, but keep developing it. The demo ends at curation → download. | The slideshow is the primary *design* learning surface and isn't demo-ready (flat 2s/frame pacing, no music-sync). Showing it half-baked sets the wrong impression. |
+| **Keep Part 3 reachable for dev** | "Hide" means *remove from the main flow*, not delete. Keep the `/dev` route wired to `SlideshowPlayer` with the three fixtures. | Hiding it from users and developing it are in tension; the dev route resolves that — instant iteration stays available. |
+| **Download resolution** | Download must export **full-res originals**, not the ≤1000px thumbnails. | For a personal-memories product, downscaled images aren't an acceptable deliverable. See the memory-model note in Part A. |
+| **Trip name source** | **Survey question, not geocoding.** | Geocoding can only ever produce a place name ("Portugal"), never a title; it's also network-bound and rate-limited. A user-supplied name ("Lisbon weekend") is better and instant. The `meta.surveyResponses` hook already exists. |
+
+---
+
+## Part A — Curation UI changes (priority 1)
+
+### A1. Pre-pipeline survey (trip name + target count)
+
+**This executes existing design intent.** `IMPLEMENTATION-PLAN.md` already calls
+for a two-phase pipeline where "survey collects user preferences during this
+time," and `meta.surveyResponses` is plumbed end-to-end (`runner.js:156`) and
+read by curation (`CurationScreen.jsx:24`) — but nothing ever writes it, so
+`targetCount` is always undefined and chapter targets silently fall back to a
+flat ~20% heuristic. The slot is built and waiting.
+
+Build a short intake (1–2 questions) shown before/around the pipeline run:
+
+- **Trip name** → replaces the `tripName || 'trip'` fallback that currently
+  shows in two of the most-read spots: the curation topbar
+  (`CurationScreen.jsx:70-72`) and the Celebration headline
+  (`Celebration.jsx:48`). Fixes the literal "trip" blemish, and bites harder
+  now that geocoding (the other name source) is off the curation path.
+- **Target keep count** → writes `meta.surveyResponses.targetCount`, finally
+  activating the dormant proportional per-chapter target logic instead of the
+  flat 20% fallback.
+
+**Crossover with performance:** the survey doubles as something for the user to
+*do* while the pipeline grinds — it fills the wait. See Part B.
+
+Writes: `meta.surveyResponses = { tripName, targetCount }`.
+
+### A2. Celebration → full-res download
+
+The completion screen is currently built around **"Play your story"** as the
+primary CTA (`Celebration.jsx:65`) — a dead end once Part 3 is hidden.
+
+- Make **full-res download** the primary CTA; restyle it out of its current
+  secondary/ghost treatment (`curation.css:323` `.download`).
+- Remove "Play your story".
+- Keep "Keep refining" as the secondary action.
+
+### A3. Hide Part 3 from the main flow (config switch)
+
+Gate Part 3 behind a **config / feature flag** rather than deleting the route, so
+it can be flipped back on without code surgery as the slideshow matures.
+
+- Add a flag (e.g. `FEATURES.slideshow` in a small config module, or a build-time
+  env var) read by the App router (`App.jsx:76-82`); when off, curation's
+  `onComplete` routes to download instead of `SlideshowPlayer`.
+- Keep the `/dev` route wired to `SlideshowPlayer` + fixtures regardless of the
+  flag, for development.
+
+### A4. Full-res download plumbing
+
+Today `downloadCuratedPhotos` (`curatedDownload.js`) zips the ≤1000px thumbnail
+data URLs. We need originals.
+
+- Retain a `Map<photoId, File>` of originals at the **App level** (outside the
+  pipeline), alive through curation. Holding a `File` reference is cheap — it's
+  a lazy handle to bytes on disk; only reading/decoding pulls bytes into memory.
+- At download time, read only the **kept** files, stream into the zip
+  (`zip.js`), release as you go. The hot decoded-bitmap path is unchanged.
+- **Memory-rule note:** this relaxes CLAUDE.md's *"no File references survive
+  past chapter building."* Reframe it to: *"no decoded image data survives past
+  chapter building; original File handles for the kept set are retained for
+  export only."* Update CLAUDE.md when implemented.
+
+### A5. Keep-and-advance / chapter hand-off (was "B4" — confirmed worth adding)
+
+Tested in-app and confirmed worth doing. Keeping a photo auto-advances
+(`onKeep` → `setTimeout(goNext, 240)`, `CurationScreen.jsx:206`), but `goNext`
+clamps at the last index — so the keep-and-advance rhythm dead-ends at each
+chapter's last photo with no cue. Add a "chapter complete → roll into next
+chapter" hand-off so the whole pass feels like one continuous motion.
+
+### A7. "Photos stay on your device" reassurance (upload page)
+
+Surface the core privacy promise on the first screen. Add a short reassurance
+line on the upload page (`UploadPage.jsx`) — near the dropzone / CTA — stating
+photos never leave the device. Reinforces the product's headline differentiator
+(EXECUTIVE-SUMMARY's "core privacy promise") right at the point of action.
+
+> **Dropped this session:** keyboard navigation (deferred), post-remove undo
+> (redundant — the keep toggle already re-adds a photo), and a mobile-layout
+> check (judged OK for now).
+
+---
+
+## Part B — Performance / loading fix (priority 2)
+
+The wait after "Start curating" has both a structural cause and a perceptual
+one.
+
+### B1. Skip geocoding for now (off the curation hot path)
+
+`UploadPage.jsx:71-102` runs `resolveSkeletonLocations()` (Nominatim) during
+finalization, **before** handing off to curation — the button literally sits on
+"Resolving locations… 3/8", which is network-bound and unshortenable
+(`geocode.js:14,77-79` is locked to 1 req/1100ms per Nominatim policy, so an
+N-area trip has a ~1.1s × N floor).
+
+**Decision: skip geocoding entirely for the demo.**
+
+- **Chapter *separation* is unaffected.** `cluster.js` splits chapters purely by
+  EXIF timestamps (day / time-gap), never geocoding. Chapters simply render as
+  bare "Day N" — which curation already handles
+  (`CurationScreen.jsx:236-240`). Time-based separation stays exactly as is.
+- Removes a network round-trip and the rate-limited wait from the path into
+  curation — a direct loading win.
+- Trip name comes from the A1 survey, not geocoding — so nothing user-facing
+  regresses.
+
+**Future direction (agreed):** geocoding returns to *name* the day-chapters
+("Day 1 · Lisbon") — **labelling only, never separation**, and time-based
+separation is kept. When it returns it should be **progressive** (curation opens
+immediately; labels upgrade in place) and **opt-in** (e.g. a survey consent
+toggle), so the "disconnect-to-verify" privacy promise stays honest. The
+specific privacy mechanism is deferred until then. See Future consideration.
+
+### B2. Survey fills the wait (crossover with A1)
+
+The pre-pipeline survey (A1) gives the user something to do while Phase 1 runs
+and — more importantly — lets us **learn about the user up front** (trip name,
+target count, with room to grow into other intent signals). Cheapest perceptual
+win, already on the build list, and the highest-value of the perceptual fixes
+because of what it tells us.
+
+### B3. Two-phase thumbnails
+
+`thumbnail.js` does a full decode + dual-tier JPEG encode (1000px + 200px) per
+photo — the heaviest stage. Encode the small 200px tier first (fast, unblocks
+the curation grid), defer/stream the 1000px hero tier.
+
+### B4. Live "developing" preview grid (perceptual)
+
+During the wait, the screen shows a static preview grid (first 24 blob
+thumbnails) and a dark button cycling canned phrases every 1.8s
+(`useCyclingPhrase`, `UploadPage.jsx:288-301`). Nothing reflects real progress.
+
+Turn the existing preview grid into the progress surface: sharpen thumbnails in
+as the pipeline emits them, dim/collapse frames as dedup rejects them, mark
+heroes as `heroSelect` runs. This fills the wait with something *true* and
+serves the project's "make AI/pipeline decisions visible" learning goal — the
+upload-side twin of the `/pipeline` debug route. (Sequenced after B3 so the
+two-phase thumbnail stream is in place to feed it.)
+
+### Future consideration
+
+- **Worker concurrency** — bump the heavy stages (thumbnail, dedup) from a fixed
+  4 workers to `navigator.hardwareConcurrency`. Not now; revisit only if
+  profiling shows we need it.
+- **Progressive handoff** — open curation on chapter 1 as soon as it's ready,
+  rather than waiting for the entire set to finish processing. Deferred.
+- **Geocoded chapter names (opt-in, progressive)** — name the day-chapters with
+  place labels via Nominatim, loaded progressively and gated behind explicit
+  consent. Labelling only; keeps time-based separation. Deferred. (See B1.)
+
+---
+
+## Suggested sequence
+
+1. **A1** survey (= **B2**: fixes trip name, activates target logic, fills the
+   wait, learns about the user) + **B1** skip geocoding — preconditions for
+   cleanly hiding Part 3.
+2. **A3** hide Part 3 (config switch) + **A4** full-res download + **A2**
+   Celebration rewrite — one coherent "demo endpoint" pass.
+3. **A5** keep-and-advance hand-off + **A7** on-device privacy line (done).
+4. **B3** two-phase thumbnails, then **B4** developing preview grid — structural
+   then perceptual, if the wait still bites.
+
+---
+
+## Appendix — carried forward from `IMPLEMENTATION-PLAN.md` (deprecated)
+
+`IMPLEMENTATION-PLAN.md` (April 2026 design review) is superseded by this doc and
+has been removed. Its architecture/data-model content lives in `ARCHITECTURE.md`;
+its completed work is reflected in the codebase. The still-live items not already
+captured above are preserved here.
+
+### Open performance threads (extend Part B)
+
+- **Web Worker hoist for thumbnail + dedup.** Today everything but EXIF runs on
+  the *main thread* — blocks React and can't use a second core beyond what async
+  I/O interleaving gives `parallelMap`. Likely the single largest perf win.
+- **Merge dedup pass-2 decode with thumbnail decode.** Each file is decoded
+  *twice* today (16×16 for the perceptual hash, 1000px for the thumbnail); one
+  decode + two resizes ≈ halves decode cost. Pairs with B3.
+- **Hero (1000px) tier only for photos the slideshow actually shows.** Burst
+  candidates sit in the photos map but are never rendered. Extends B3.
+- **Benchmark before trusting the pool size.** The concurrency pool of 4 is a
+  guess; measure a ~500-photo trip on mid-range Android. Informs the
+  Future-consideration worker-concurrency item.
+
+### Notes attached to existing items
+
+- **B4 ← DarkroomView (orig. PR 2C).** B4's "developing preview grid" *is* the
+  original DarkroomView spec: thumbnails fade in on a dim background as
+  EXIF/dedup/thumbnail stages complete — a film-development metaphor that matches
+  curation's existing "Darkroom identity." Never built (UploadPage uses the
+  cycling-phrase button instead). Reuse the metaphor.
+- **B1 ← Mode badge + boundary notification (orig. PR 2F).** The deferred opt-in
+  geocoding would be the product's *first* network feature; the original
+  "Local/Server mode badge + one-time boundary notification" is its privacy UX.
+  Pairs with the A7 on-device line.
+- **A1 ← Survey design contract.** Lessons from the original (and from it being
+  dropped once for *feeling awkward*): keep to ≤2 questions; 60s timeout →
+  proceed with defaults; enforce a minimum display time so an instant pipeline
+  doesn't flash past it; handle "Phase 1A finishes before the user answers." A1's
+  long-term evolution is free-text intent interpreted by an LLM agent (PR 5A).
+
+### Post-demo roadmap pointer — back to AI learning
+
+**After the demo phase, focus switches back to the project's core learning goal:
+AI-powered development, starting with calling the APIs.** Carried from the
+deprecated plan, in sequence:
+
+- **Phase 3 — LLM integration (opt-in), START HERE post-demo:** caption
+  generation on the **raw Anthropic SDK** (prompt caching, streaming) → agentic
+  captions with **tool use** → story-narrative agent → share.
+- **Phase 4 — On-device ML** (implement heuristics before ML — the contrast is
+  the lesson): MediaPipe face detection, NIMA aesthetic scoring, MobileNet scene
+  classification, CLIP semantic embeddings / variety selection. Service-worker
+  model caching ships with the first model.
+- **Phase 5 — Agents + preference learning:** free-text survey agent (PR 5A,
+  evolves A1); preference learning from `swapHistory` (PR 5B, fed by PR 2E).
+- **Framework progression (raw-first):** Anthropic SDK (primitives → tool use) →
+  Vercel AI SDK (streaming into React) → Claude Agent SDK (multi-agent). Avoid
+  LangChain / LlamaIndex until the raw SDK is understood.

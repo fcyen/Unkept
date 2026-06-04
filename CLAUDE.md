@@ -13,7 +13,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
                         the embedding pipeline stage when semantic clustering is enabled (/pipeline)
   EXECUTIVE-SUMMARY.md   Product overview
   ARCHITECTURE.md        System design
-  IMPLEMENTATION-PLAN.md Implementation plan (supersedes PLAN-v3.md)
+  IMPLEMENTATION-PLAN-2.md Active plan of record (pre-demo; supersedes IMPLEMENTATION-PLAN.md)
   archived_docs/         Superseded docs kept for reference
     MVP.md               MVP feature scope and quality bar (MVP stage complete)
     PHASE-2-DESIGN-INTENT.md  Slideshow renderer design intent + storyboard
@@ -31,7 +31,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ## Memory rules
 - Revoke blob URLs as early as possible (immediately after dedup rejects, after thumbnail data URLs are created)
 - Never hold File bytes in memory longer than needed for the current stage
-- Target: no File references survive past chapter building
+- Target: no decoded image data survives past chapter building; original File handles for the kept set are retained for export only (App-level `originals` Map, pruned to kept ids on curation complete, cleared on session reset)
 
 ## Key decisions
 - Nominatim for geocoding (Part 3 only — it's a network call)

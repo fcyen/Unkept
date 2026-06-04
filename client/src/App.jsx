@@ -61,6 +61,10 @@ function curateStory(story, keptIds) {
 export default function App() {
   const [story, setStory] = useState(null);
   const [curated, setCurated] = useState(null);
+  // File handles for the kept set, retained across curation so the download
+  // CTA can export full-res originals. Pruned to kept ids when curation
+  // completes, and cleared when the session resets.
+  const [originals, setOriginals] = useState(null);
 
   if (isPipelineRoute) {
     return <Suspense fallback={null}><PipelineDebugRoute /></Suspense>;
@@ -78,7 +82,7 @@ export default function App() {
     return (
       <SlideshowPlayer
         story={curated}
-        onExit={() => { setCurated(null); setStory(null); }}
+        onExit={() => { setCurated(null); setStory(null); setOriginals(null); }}
       />
     );
   }
@@ -87,13 +91,31 @@ export default function App() {
     return (
       <CurationScreen
         story={story}
-        onBack={() => setStory(null)}
+        originals={originals}
+        onBack={() => { setStory(null); setOriginals(null); }}
         onComplete={FEATURES.slideshow
-          ? ({ keptIds }) => setCurated(curateStory(story, keptIds))
+          ? ({ keptIds }) => {
+              if (originals) {
+                const pruned = new Map();
+                for (const id of keptIds) {
+                  const file = originals.get(id);
+                  if (file) pruned.set(id, file);
+                }
+                setOriginals(pruned);
+              }
+              setCurated(curateStory(story, keptIds));
+            }
           : undefined}
       />
     );
   }
 
-  return <UploadPage onStoryReady={setStory} />;
+  return (
+    <UploadPage
+      onStoryReady={(s, originalsMap) => {
+        setStory(s);
+        setOriginals(originalsMap || null);
+      }}
+    />
+  );
 }

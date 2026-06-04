@@ -64,6 +64,11 @@ export default function UploadPage({ onStoryReady }) {
   const [surveyResponses, setSurveyResponses] = useState(null);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
+  // File handles for the photos submitted to the pipeline, keyed by the
+  // synthetic ids the pipeline assigns (photo_${index}). Passed to App on
+  // story completion so the kept set can be exported at full resolution
+  // — the File object is a lazy disk handle, decoded only on read.
+  const originalsRef = useRef(null);
 
   const pipeline = usePipeline();
 
@@ -118,7 +123,8 @@ export default function UploadPage({ onStoryReady }) {
         setPreviews([]);
         setPhotos([]);
 
-        onStoryReady(story);
+        onStoryReady(story, originalsRef.current);
+        originalsRef.current = null;
       } catch (err) {
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
@@ -170,6 +176,9 @@ export default function UploadPage({ onStoryReady }) {
       return;
     }
     setError('');
+    originalsRef.current = new Map(
+      photos.map((file, i) => [`photo_${i}`, file]),
+    );
     setSurveyResponses(null);
     setSurveyOpen(true);
     track('photos_uploaded', { count: photos.length });
@@ -272,6 +281,14 @@ export default function UploadPage({ onStoryReady }) {
           onClick={handleGenerate}
           hasPhotos={photos.length > 0}
         />
+
+        <p className="font-sans text-xs text-faint tracking-wide text-center mt-4 flex items-center justify-center gap-1.5">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="9" rx="2" strokeWidth={1.6} />
+            <path d="M8 11V8a4 4 0 018 0v3" strokeWidth={1.6} strokeLinecap="round" />
+          </svg>
+          Your photos never leave this device
+        </p>
       </div>
 
       {surveyOpen && (
