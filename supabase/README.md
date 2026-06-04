@@ -37,13 +37,17 @@ supabase/
    supabase db push
    ```
 
-3. **Set the Function secrets** (server-side only — never shipped to the client)
+3. **(Optional) Set the CORS origin secret**
+
+   `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are **auto-injected** into
+   every Edge Function by the platform — do NOT set them yourself (the CLI
+   rejects the reserved `SUPABASE_` prefix). The Function reads them directly.
+
+   The only optional secret locks CORS to the production origin:
    ```
-   supabase secrets set SUPABASE_URL=https://<PROJECT_REF>.supabase.co
-   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service_role key from Settings → API>
-   # optional: lock CORS to the production origin
    supabase secrets set TELEMETRY_ALLOWED_ORIGIN=https://unkept.netlify.app
    ```
+   Leave it unset to default to `*` (fine for early beta).
 
 4. **Deploy the Function**
    ```
@@ -61,8 +65,9 @@ supabase/
 
 - `public.events` has RLS enabled with **no policies** → the `anon` key (the
   only key that could reach a browser) can neither read nor write.
-- The `service_role` key bypasses RLS and lives **only** in the Function's
-  secrets. It is never bundled into the client.
+- The `service_role` key bypasses RLS and is **auto-injected** into the Edge
+  Function's server-side environment by the platform. It stays on the server
+  and is never bundled into the client.
 - The Function ignores the client IP entirely (not stored, not used for rate
   limiting) and stores only a coarse user-agent bucket, never the raw string.
 
