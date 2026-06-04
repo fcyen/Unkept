@@ -54,12 +54,17 @@ supabase/
    supabase functions deploy track
    ```
 
-5. **Point the client at it** (Netlify build env, or client/.env.local)
+5. **Point the client at it** (Netlify build env, or client/.env.local) — set
+   **both** env vars and trigger a fresh Netlify deploy. Vite inlines these at
+   build time, so existing bundles won't pick them up until rebuilt.
    ```
+   VITE_BETA_TELEMETRY=true
    VITE_TELEMETRY_ENDPOINT=https://<PROJECT_REF>.supabase.co/functions/v1/track
    ```
-   and flip `FEATURES.betaTelemetry` to `true` in `client/src/config.js` for the
-   beta deploy. Both must be present or telemetry stays inert.
+   Both must be present (and `VITE_BETA_TELEMETRY` must be the literal string
+   `true`) or telemetry stays inert. To verify in a deployed bundle, view the
+   page source and grep the JS for `supabase.co/functions/v1/track` — if it's
+   missing, the env var didn't make it into the build.
 
 ## Security model
 

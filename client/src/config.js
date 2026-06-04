@@ -4,11 +4,11 @@
 // production flow skips it while the design intent is still firming up.
 export const FEATURES = {
   slideshow: false,
-  // Beta usage telemetry. Off by default; flipped on for the beta deploy
-  // only. When off, `track()` is a no-op and nothing is sent — the app
-  // makes no network call. Anonymous, non-identifying counts only; see
-  // client/src/lib/analytics.js for the privacy guardrails.
-  betaTelemetry: false,
+  // Beta usage telemetry. Driven by the VITE_BETA_TELEMETRY env var so the
+  // beta deploy can flip it on with a build env change — no code edit. When
+  // off, `track()` is a no-op and nothing is sent. Anonymous, non-identifying
+  // counts only; see client/src/lib/analytics.js for the privacy guardrails.
+  betaTelemetry: import.meta.env.VITE_BETA_TELEMETRY === 'true',
 };
 
 // Public URL of the Supabase Edge Function that ingests telemetry. This is
@@ -19,3 +19,4 @@ export const FEATURES = {
 // both the flag and the endpoint are present.
 export const TELEMETRY_ENDPOINT =
   import.meta.env.VITE_TELEMETRY_ENDPOINT || '';
+
