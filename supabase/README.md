@@ -6,12 +6,14 @@ browser never touches the database.
 
 ```
 browser → track() (batched, flushed on page hide)
-        → POST  https://toowkevypophimsmvfdf.supabase.co/functions/v1/track
+        → POST  https://<PROJECT_REF>.supabase.co/functions/v1/track
         → Edge Function (validate, strip IP, bucket UA, rate-limit)
         → service-role insert → public.events
 ```
 
-Project ref: `toowkevypophimsmvfdf`
+The Supabase project ref is intentionally kept out of the repo. Substitute
+your own `<PROJECT_REF>` below — `supabase link` (step 1) stores it locally in
+the gitignored `supabase/.temp/`, so it never needs to be committed.
 
 ## Layout
 
@@ -27,7 +29,7 @@ supabase/
    ```
    npm install -g supabase
    supabase login
-   supabase link --project-ref toowkevypophimsmvfdf
+   supabase link --project-ref <PROJECT_REF>
    ```
 
 2. **Apply the migration** (creates `events`, RLS, and the views)
@@ -37,7 +39,7 @@ supabase/
 
 3. **Set the Function secrets** (server-side only — never shipped to the client)
    ```
-   supabase secrets set SUPABASE_URL=https://toowkevypophimsmvfdf.supabase.co
+   supabase secrets set SUPABASE_URL=https://<PROJECT_REF>.supabase.co
    supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service_role key from Settings → API>
    # optional: lock CORS to the production origin
    supabase secrets set TELEMETRY_ALLOWED_ORIGIN=https://unkept.netlify.app
@@ -50,7 +52,7 @@ supabase/
 
 5. **Point the client at it** (Netlify build env, or client/.env.local)
    ```
-   VITE_TELEMETRY_ENDPOINT=https://toowkevypophimsmvfdf.supabase.co/functions/v1/track
+   VITE_TELEMETRY_ENDPOINT=https://<PROJECT_REF>.supabase.co/functions/v1/track
    ```
    and flip `FEATURES.betaTelemetry` to `true` in `client/src/config.js` for the
    beta deploy. Both must be present or telemetry stays inert.
