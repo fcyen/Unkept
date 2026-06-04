@@ -5,3 +5,6 @@ server/embed/__pycache__/
 !server/.gitkeep-uploads
 .env
 .*
+# Keep env templates tracked (the broad .* rule above would hide them).
+!.env.example
+!**/.env.example
