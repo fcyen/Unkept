@@ -3,6 +3,7 @@ import UploadPage from './components/UploadPage.jsx';
 import SlideshowPlayer from './components/slideshow/SlideshowPlayer.jsx';
 import CurationScreen from './components/curation/CurationScreen.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
+import PasswordGate, { isUnlocked } from './components/PasswordGate.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
 import { buildStory, applyGeocoding } from './lib/storyBuilder.js';
 import { FEATURES } from './config.js';
@@ -65,6 +66,7 @@ export default function App() {
   // CTA can export full-res originals. Pruned to kept ids when curation
   // completes, and cleared when the session resets.
   const [originals, setOriginals] = useState(null);
+  const [unlocked, setUnlocked] = useState(() => isDebugMode || isUnlocked());
 
   if (isPipelineRoute) {
     return <Suspense fallback={null}><PipelineDebugRoute /></Suspense>;
@@ -76,6 +78,10 @@ export default function App() {
 
   if (!compatibility.passed) {
     return <CompatibilityBlock checks={compatibility.checks} />;
+  }
+
+  if (!unlocked) {
+    return <PasswordGate onUnlock={() => setUnlocked(true)} />;
   }
 
   if (FEATURES.slideshow && curated) {
