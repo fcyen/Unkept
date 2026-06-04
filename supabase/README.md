@@ -1,0 +1,72 @@
+# Telemetry backend (Supabase)
+
+Anonymous beta usage telemetry for Unkept — see issue #50. Raw events land in
+a locked-down Postgres table, written **only** by an Edge Function. The
+browser never touches the database.
+
+```
+browser → track() (batched, flushed on page hide)
+        → POST  https://toowkevypophimsmvfdf.supabase.co/functions/v1/track
+        → Edge Function (validate, strip IP, bucket UA, rate-limit)
+        → service-role insert → public.events
+```
+
+Project ref: `toowkevypophimsmvfdf`
+
+## Layout
+
+```
+supabase/
+  migrations/0001_events.sql   events table + locked-down RLS + analysis views
+  functions/track/index.ts     the only writer; service-role insert
+```
+
+## One-time setup
+
+1. **Install + link the CLI**
+   ```
+   npm install -g supabase
+   supabase login
+   supabase link --project-ref toowkevypophimsmvfdf
+   ```
+
+2. **Apply the migration** (creates `events`, RLS, and the views)
+   ```
+   supabase db push
+   ```
+
+3. **Set the Function secrets** (server-side only — never shipped to the client)
+   ```
+   supabase secrets set SUPABASE_URL=https://toowkevypophimsmvfdf.supabase.co
+   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service_role key from Settings → API>
+   # optional: lock CORS to the production origin
+   supabase secrets set TELEMETRY_ALLOWED_ORIGIN=https://unkept.netlify.app
+   ```
+
+4. **Deploy the Function**
+   ```
+   supabase functions deploy track
+   ```
+
+5. **Point the client at it** (Netlify build env, or client/.env.local)
+   ```
+   VITE_TELEMETRY_ENDPOINT=https://toowkevypophimsmvfdf.supabase.co/functions/v1/track
+   ```
+   and flip `FEATURES.betaTelemetry` to `true` in `client/src/config.js` for the
+   beta deploy. Both must be present or telemetry stays inert.
+
+## Security model
+
+- `public.events` has RLS enabled with **no policies** → the `anon` key (the
+  only key that could reach a browser) can neither read nor write.
+- The `service_role` key bypasses RLS and lives **only** in the Function's
+  secrets. It is never bundled into the client.
+- The Function ignores the client IP entirely (not stored, not used for rate
+  limiting) and stores only a coarse user-agent bucket, never the raw string.
+
+## Analysis
+
+Views in the migration are saved queries — open the Supabase SQL editor and
+run e.g. `select * from v_photos_uploaded;`. More views land in PR 2 with the
+remaining metrics (time-to-curation, curation duration, toggle counts) and the
+extras (pipeline stage durations, curation funnel, bail-outs, errors).
