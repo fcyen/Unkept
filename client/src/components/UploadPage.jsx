@@ -64,6 +64,10 @@ export default function UploadPage({ onStoryReady }) {
   const [surveyResponses, setSurveyResponses] = useState(null);
   const fileInputRef = useRef(null);
   const handledResultRef = useRef(null);
+  // Timestamp of "Start curating" — the span until the curation screen appears
+  // (pipeline + survey + finalize + geocoding) is what feels slow to the user,
+  // so we measure the whole thing here and emit it as `time_to_curation`.
+  const curationStartRef = useRef(null);
   // File handles for the photos submitted to the pipeline, keyed by the
   // synthetic ids the pipeline assigns (photo_${index}). Passed to App on
   // story completion so the kept set can be exported at full resolution
@@ -123,9 +127,19 @@ export default function UploadPage({ onStoryReady }) {
         setPreviews([]);
         setPhotos([]);
 
+        if (curationStartRef.current != null) {
+          track('time_to_curation', {
+            ms: Math.round(performance.now() - curationStartRef.current),
+          });
+          curationStartRef.current = null;
+        }
+
         onStoryReady(story, originalsRef.current);
         originalsRef.current = null;
       } catch (err) {
+        // Surface the failure to the user, and count it — name only, never the
+        // message (which can contain a filename).
+        track('error', { source: 'finalize', name: err?.name || 'Error' });
         setError(err.message || 'Failed to finish story.');
         setGeocodingProgress(null);
         setFinalizing(false);
@@ -135,6 +149,7 @@ export default function UploadPage({ onStoryReady }) {
 
   useEffect(() => {
     if (pipeline.error) {
+      track('error', { source: 'pipeline', name: pipeline.error.name || 'Error' });
       setError(pipeline.error.message || 'Pipeline failed.');
       setSurveyOpen(false);
     }
@@ -181,6 +196,7 @@ export default function UploadPage({ onStoryReady }) {
     );
     setSurveyResponses(null);
     setSurveyOpen(true);
+    curationStartRef.current = performance.now();
     track('photos_uploaded', { count: photos.length });
     pipeline.start(photos);
   };

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './curation.css';
+import { track } from '../../lib/analytics.js';
 import ChapterRail from './ChapterRail.jsx';
 import MainPhoto from './MainPhoto.jsx';
 import RightStrip from './RightStrip.jsx';
@@ -122,7 +123,25 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
   const [touched, setTouched] = useState(() => new Set());
   const [streak, setStreak] = useState(0);
 
+  // Telemetry refs (no re-render): screen mount time for curation_duration,
+  // raw keep/remove press count for toggle_count (distinct from touched.size —
+  // effort vs. decision breadth), and a guard so a normal finish isn't also
+  // logged as a tab-close bail-out.
+  const mountedAtRef = useRef(null);
+  const togglePressesRef = useRef(0);
+  const completedRef = useRef(false);
+
+  // Auto-kept = the starter (hero) set the screen opens with; the funnel
+  // compares it against the user's final keep set.
+  const autoKeptCount = useMemo(
+    () => new Set(chapters.flatMap((c) => c.starter)).size,
+    [chapters],
+  );
+  const uploadedCount = (story.skeleton || story).meta?.totalPhotosInput
+    ?? Object.keys(photoById).length;
+
   const toggle = useCallback((id, on) => {
+    togglePressesRef.current += 1;
     setKept((prev) => {
       const next = new Set(prev);
       const wantsOn = on === undefined ? !prev.has(id) : on;
@@ -190,6 +209,18 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
     if (touched.size > 0) setShowStarter(false);
   }, [touched.size]);
 
+  // Mark the curation start, and treat leaving the tab before Finish as a
+  // bail-out — one of the few "this isn't working" signals we get without a
+  // survey. A normal Finish sets completedRef so it isn't double-counted.
+  useEffect(() => {
+    mountedAtRef.current = performance.now();
+    const onPageHide = () => {
+      if (!completedRef.current) track('bail_out', { from: 'tab_close' });
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
   if (!chapter || !current) {
     return (
       <div className="curation-root">
@@ -223,7 +254,36 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
     setPhotoIdx(Math.max(0, idx));
   };
 
-  const onFinish = () => setShowCelebrate(true);
+  // Finish = curation complete (the Celebration screen is the reward, and in
+  // the production flow the user may download from there without pressing
+  // Continue) — so the completion metrics fire here, not on Continue.
+  const onFinish = () => {
+    // Emit completion metrics once — the user can return via "Keep refining"
+    // and Finish again, but that shouldn't double-count.
+    if (!completedRef.current) {
+      completedRef.current = true;
+      if (mountedAtRef.current != null) {
+        track('curation_duration', {
+          ms: Math.round(performance.now() - mountedAtRef.current),
+        });
+      }
+      track('toggle_count', {
+        presses: togglePressesRef.current,  // raw effort
+        touched: touched.size,              // distinct photos decided on
+      });
+      track('curation_funnel', {
+        uploaded: uploadedCount,
+        autoKept: autoKeptCount,
+        userKept: kept.size,
+      });
+    }
+    setShowCelebrate(true);
+  };
+
+  const handleBack = () => {
+    track('bail_out', { from: 'back' });
+    onBack();
+  };
 
   return (
     <div className="curation-root">
@@ -242,7 +302,7 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
           <ProgressBar kept={totalKept} target={totalTarget} streak={streak} />
         </div>
         {onBack && (
-          <button className="back-btn" onClick={onBack} type="button">Back</button>
+          <button className="back-btn" onClick={handleBack} type="button">Back</button>
         )}
       </div>
 

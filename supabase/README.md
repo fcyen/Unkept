@@ -76,9 +76,25 @@ supabase/
    page source and grep the JS for `supabase.co/functions/v1/track` — if it's
    missing, the env var didn't make it into the build.
 
+## Events
+
+Eight events, all anonymous scalar counts/timings (see `client/src/lib/analytics.js`):
+
+| Event | Properties | Fired from |
+|---|---|---|
+| `photos_uploaded` | `count` | UploadPage — Start curating |
+| `time_to_curation` | `ms` | UploadPage — Start curating → curation screen |
+| `pipeline_stage_duration` | `{stage: ms}` per stage | usePipeline — after Phase 1 |
+| `curation_duration` | `ms` | CurationScreen — mount → Finish |
+| `toggle_count` | `presses`, `touched` | CurationScreen — Finish |
+| `curation_funnel` | `uploaded`, `autoKept`, `userKept` | CurationScreen — Finish |
+| `bail_out` | `from` (`back` \| `tab_close`) | CurationScreen — left before Finish |
+| `error` | `source`, `name` \| `failed` | pipeline / finalize fail, compat-gate reject |
+
 ## Analysis
 
-Views in the migration are saved queries — open the Supabase SQL editor and
-run e.g. `select * from v_photos_uploaded;`. More views land in PR 2 with the
-remaining metrics (time-to-curation, curation duration, toggle counts) and the
-extras (pipeline stage durations, curation funnel, bail-outs, errors).
+Views are saved queries — open the Supabase SQL editor and `select * from
+v_<name>;`. `0001_events.sql` ships `v_photos_uploaded`; `0002_metric_views.sql`
+adds one view per remaining metric: `v_time_to_curation`, `v_curation_duration`,
+`v_toggle_count`, `v_curation_funnel`, `v_pipeline_stage_duration`, `v_bail_out`,
+`v_errors`. Apply with `supabase db push`.
