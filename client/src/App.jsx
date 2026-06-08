@@ -5,6 +5,7 @@ import CurationScreen from './components/curation/CurationScreen.jsx';
 import CompatibilityBlock from './components/CompatibilityBlock.jsx';
 import { checkCompatibility } from './lib/compatibility.js';
 import { buildStory, applyGeocoding } from './lib/storyBuilder.js';
+import { track } from './lib/analytics.js';
 import { FEATURES } from './config.js';
 
 // Debug routes are lazy-imported and only resolved when MODE === 'debug'.
@@ -26,6 +27,17 @@ const isPipelineRoute = isDebugMode && (
 
 // Run once at module load — gate the app before any pipeline code runs.
 const compatibility = checkCompatibility();
+
+// Count gate rejections so we learn what real devices fail on. Check names are
+// generic capability flags (webWorkers, minMemory, …) — no PII. Fires once at
+// module load; a no-op unless telemetry is enabled.
+if (!compatibility.passed) {
+  const failed = Object.entries(compatibility.checks)
+    .filter(([, ok]) => !ok)
+    .map(([name]) => name)
+    .join(',');
+  track('error', { source: 'compat', failed });
+}
 
 // Re-derive a Story from the curated set: filter each chapter's photoIds
 // down to what the user kept, replay buildStory + applyGeocoding so the

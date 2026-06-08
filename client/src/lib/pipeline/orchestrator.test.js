@@ -129,6 +129,47 @@ describe('runPhase1', () => {
     const stages = events.map((e) => e.stage);
     expect(stages).toEqual(expect.arrayContaining(['exif', 'dedup', 'cluster']));
   });
+
+  it('brackets each stage with onStageStart/onStageComplete in order', async () => {
+    // The telemetry pipeline_stage_duration event times stages off these
+    // hooks, so the contract is: start fires immediately before a stage runs,
+    // complete immediately after, for every stage, in pipeline order.
+    const photo = basicPhoto();
+    const log = [];
+
+    await runPhase1([{}], {
+      onStageStart: (stage) => log.push(`start:${stage}`),
+      onStageComplete: (stage) => log.push(`complete:${stage}`),
+      stages: {
+        exif: async () => [photo],
+        dedup: async () => ({ photos: [photo], burstGroups: [], burstCandidates: [] }),
+        cluster: async () => ({ clusters: [[photo]], burstGroups: [], burstCandidates: [] }),
+        heroSelect: async (input) => ({
+          clusters: input.clusters,
+          heroIds: new Set([photo.id]),
+          burstGroups: [],
+          burstCandidates: [],
+        }),
+        chapterBuilder: async () => ({
+          chapters: [{ id: 'chapter_001', photoIds: [photo.id], heroPhotoId: photo.id, date: '2025-03-15', coords: null }],
+          photos: new Map([[photo.id, photo]]),
+          burstGroups: [],
+        }),
+        thumbnail: async (input) => input,
+        qualityScore: async (input) => input,
+      },
+    });
+
+    expect(log).toEqual([
+      'start:exif', 'complete:exif',
+      'start:dedup', 'complete:dedup',
+      'start:cluster', 'complete:cluster',
+      'start:heroSelect', 'complete:heroSelect',
+      'start:chapterBuilder', 'complete:chapterBuilder',
+      'start:thumbnail', 'complete:thumbnail',
+      'start:qualityScore', 'complete:qualityScore',
+    ]);
+  });
 });
 
 function basicPhoto() {
