@@ -100,8 +100,10 @@ export function track(name, props = {}) {
 }
 
 /**
- * Send queued events now. Uses sendBeacon when available (survives page
- * unload); falls back to fetch with keepalive. Failures are swallowed —
+ * Send queued events now. Uses fetch with `keepalive: true`, which survives
+ * page unload the same way sendBeacon does — but, unlike sendBeacon, lets us
+ * send `credentials: 'omit'` so no cookies ever ride along to the telemetry
+ * endpoint (sendBeacon forces credentials: 'include'). Failures are swallowed —
  * telemetry must never disrupt the app or surface an error to the user.
  */
 export function flush() {
@@ -115,18 +117,12 @@ export function flush() {
   const payload = JSON.stringify({ events });
 
   try {
-    if (navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: 'application/json' });
-      const ok = navigator.sendBeacon(TELEMETRY_ENDPOINT, blob);
-      console.debug('[telemetry] sendBeacon →', ok ? 'queued' : 'refused', events.length, 'event(s)');
-      if (ok) return;
-      // sendBeacon can refuse (e.g. payload too large / queue full); fall back.
-    }
     fetch(TELEMETRY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: payload,
       keepalive: true,
+      credentials: 'omit',
     })
       .then((res) => {
         console.debug('[telemetry] fetch →', res.status, res.statusText);

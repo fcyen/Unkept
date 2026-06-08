@@ -18,6 +18,18 @@ const ALLOWED_ORIGINS = (Deno.env.get("TELEMETRY_ALLOWED_ORIGIN") || "*")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+// Netlify deploy-preview and branch-deploy subdomains of the production site.
+// These rotate per PR/branch (deploy-preview-58--unkept.netlify.app, a feature
+// branch's <branch>--unkept.netlify.app, …) so they can't be enumerated in the
+// allowlist secret — match them by pattern instead. Prod stays explicitly
+// listed via TELEMETRY_ALLOWED_ORIGIN; this only adds preview origins of the
+// same site, which is safe given the endpoint is anonymous + validated + RLS.
+const NETLIFY_PREVIEW = /^https:\/\/[a-z0-9-]+--unkept\.netlify\.app$/;
+
+function isAllowedOrigin(origin: string): boolean {
+  return ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW.test(origin);
+}
+
 // Caps — reject obviously abusive payloads outright.
 const MAX_EVENTS_PER_BATCH = 50;
 const MAX_PROP_KEYS = 20;
@@ -95,19 +107,25 @@ function sanitizeProps(input: unknown): Record<string, unknown> {
 
 function corsHeaders(req: Request): HeadersInit {
   const requestOrigin = req.headers.get("origin") || "";
-  const allowOrigin =
-    ALLOWED_ORIGINS.includes("*") || !requestOrigin
-      ? "*"
-      : ALLOWED_ORIGINS.includes(requestOrigin)
-        ? requestOrigin
-        : ALLOWED_ORIGINS[0] || "*";
-
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Vary": "Origin",
   };
+
+  if (ALLOWED_ORIGINS.includes("*") || !requestOrigin) {
+    // Wildcard config, or no Origin header (curl / same-origin) → permissive.
+    headers["Access-Control-Allow-Origin"] = "*";
+  } else if (isAllowedOrigin(requestOrigin)) {
+    // Echo the exact caller's origin (required when not using "*").
+    headers["Access-Control-Allow-Origin"] = requestOrigin;
+  }
+  // Otherwise omit Access-Control-Allow-Origin entirely so the browser cleanly
+  // blocks a genuinely-disallowed origin. (The previous fallback echoed
+  // ALLOWED_ORIGINS[0] — a concrete non-matching origin — which forced a
+  // confusing CORS failure instead of an honest deny.)
+
+  return headers;
 }
 
 Deno.serve(async (req) => {
