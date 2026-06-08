@@ -118,6 +118,7 @@ export function flush() {
     if (navigator.sendBeacon) {
       const blob = new Blob([payload], { type: 'application/json' });
       const ok = navigator.sendBeacon(TELEMETRY_ENDPOINT, blob);
+      console.debug('[telemetry] sendBeacon →', ok ? 'queued' : 'refused', events.length, 'event(s)');
       if (ok) return;
       // sendBeacon can refuse (e.g. payload too large / queue full); fall back.
     }
@@ -126,9 +127,16 @@ export function flush() {
       headers: { 'Content-Type': 'application/json' },
       body: payload,
       keepalive: true,
-    }).catch(() => {});
-  } catch {
-    /* never let telemetry throw into the app */
+    })
+      .then((res) => {
+        console.debug('[telemetry] fetch →', res.status, res.statusText);
+      })
+      .catch((err) => {
+        console.warn('[telemetry] fetch failed —', err?.message || err);
+      });
+  } catch (err) {
+    // never let telemetry throw into the app, but surface why it bailed.
+    console.warn('[telemetry] flush threw —', err?.message || err);
   }
 }
 
