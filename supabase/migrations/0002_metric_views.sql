@@ -39,15 +39,15 @@ group by 1
 order by 1 desc;
 
 -- ---------------------------------------------------------------------------
--- toggle_count — raw keep/remove presses (effort) vs. distinct photos touched
--- (decision breadth). A big gap means lots of second-guessing.
+-- toggle_count — raw keep/remove presses (effort) vs. distinct photos acted
+-- on (decision breadth). A big gap means lots of second-guessing.
 -- ---------------------------------------------------------------------------
 create or replace view public.v_toggle_count as
 select
-  date_trunc('day', server_ts)                          as day,
-  count(*)                                               as sessions,
-  round(avg((properties->>'presses')::numeric), 1)      as avg_presses,
-  round(avg((properties->>'touched')::numeric), 1)      as avg_touched
+  date_trunc('day', server_ts)                              as day,
+  count(*)                                                   as sessions,
+  round(avg((properties->>'presses')::numeric), 1)          as avg_presses,
+  round(avg((properties->>'distinctPhotos')::numeric), 1)   as avg_distinct_photos
 from public.events
 where event_name = 'toggle_count'
 group by 1

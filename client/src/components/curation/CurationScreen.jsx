@@ -269,7 +269,7 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
       }
       track('toggle_count', {
         presses: togglePressesRef.current,  // raw effort
-        touched: touched.size,              // distinct photos decided on
+        distinctPhotos: touched.size,       // distinct photos acted on
       });
       track('curation_funnel', {
         uploaded: uploadedCount,

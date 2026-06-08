@@ -86,7 +86,7 @@ Eight events, all anonymous scalar counts/timings (see `client/src/lib/analytics
 | `time_to_curation` | `ms` | UploadPage — Start curating → curation screen |
 | `pipeline_stage_duration` | `{stage: ms}` per stage | usePipeline — after Phase 1 |
 | `curation_duration` | `ms` | CurationScreen — mount → Finish |
-| `toggle_count` | `presses`, `touched` | CurationScreen — Finish |
+| `toggle_count` | `presses`, `distinctPhotos` | CurationScreen — Finish |
 | `curation_funnel` | `uploaded`, `autoKept`, `userKept` | CurationScreen — Finish |
 | `bail_out` | `from` (`back` \| `tab_close`) | CurationScreen — left before Finish |
 | `error` | `source`, `name` \| `failed` | pipeline / finalize fail, compat-gate reject |
