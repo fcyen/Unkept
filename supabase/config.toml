@@ -1,0 +1,15 @@
+# Supabase project config (CLI-managed).
+#
+# We don't run the local emulator stack for this project — the dev loop
+# hits the deployed Edge Function directly. So this file is intentionally
+# minimal and only declares the per-function settings the deploy needs.
+
+project_id = "unkept"
+
+# The telemetry ingest endpoint is public by design: it accepts anonymous,
+# non-identifying event batches from any browser. Security comes from the
+# Function's own validation + RLS on the `events` table + service-role-only
+# writes — not from JWT. Verifying a JWT here would reject every request
+# (no auth header is sent) and surface as a CORS error in the browser.
+[functions.track]
+verify_jwt = false

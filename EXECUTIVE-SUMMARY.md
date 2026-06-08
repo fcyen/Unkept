@@ -4,7 +4,7 @@
 
 Unkept is a privacy-first web app that turns a large, unorganised photo collection into a curated story — automatically and on-device. Drop in photos from a trip, a wedding, or any special occasion; the app selects the best shots, groups them into chapters, and guides you through a light curation experience that feels like a fun activity, not a chore. The result is a finished, named set of photos you are proud to share.
 
-**The core privacy promise:** photos are processed entirely on the user's device. Nothing leaves the browser until the user explicitly opts into a server-side feature. This is not just a policy claim — it is structurally enforced and demonstrable by disconnecting from the internet.
+**The core privacy promise:** your photos are processed entirely on your device and never leave it — no photo, thumbnail, filename, or location is ever uploaded. This is not just a policy claim; it is structurally enforced and demonstrable by disconnecting from the internet mid-session. The app may send anonymous, non-identifying usage counts (for example: how many photos were added, how long curation took) to help improve the experience — these carry no photo data and no personal identifiers, and never include the images themselves.
 
 ---
 
