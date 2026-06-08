@@ -36,23 +36,6 @@ function enabled() {
   return FEATURES.betaTelemetry && Boolean(TELEMETRY_ENDPOINT);
 }
 
-// One-time breadcrumb so it's obvious from the browser console why
-// telemetry is or isn't firing in a given deploy — surfaces the most common
-// misconfiguration (env var missing from the build) without needing to
-// view-source the bundle.
-if (typeof console !== 'undefined') {
-  if (enabled()) {
-    console.info('[telemetry] enabled →', TELEMETRY_ENDPOINT);
-  } else {
-    console.info(
-      '[telemetry] inert — betaTelemetry:',
-      FEATURES.betaTelemetry,
-      'endpoint:',
-      TELEMETRY_ENDPOINT ? 'set' : 'missing',
-    );
-  }
-}
-
 // Pending events are batched and flushed on a short timer, on reaching a
 // size cap, and on page hide — so a closing tab still delivers what it has.
 const BATCH_MAX = 20;
@@ -123,16 +106,12 @@ export function flush() {
       body: payload,
       keepalive: true,
       credentials: 'omit',
-    })
-      .then((res) => {
-        console.debug('[telemetry] fetch →', res.status, res.statusText);
-      })
-      .catch((err) => {
-        console.warn('[telemetry] fetch failed —', err?.message || err);
-      });
-  } catch (err) {
-    // never let telemetry throw into the app, but surface why it bailed.
-    console.warn('[telemetry] flush threw —', err?.message || err);
+    }).catch(() => {
+      console.warn('[telemetry] send failed');
+    });
+  } catch {
+    // never let telemetry throw into the app.
+    console.warn('[telemetry] flush failed');
   }
 }
 
