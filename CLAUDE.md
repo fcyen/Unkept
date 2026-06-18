@@ -37,6 +37,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Nominatim for geocoding (Part 3 only — it's a network call)
 - PWA manifest added; service worker deferred until first ML model ships
 - Compatibility gate runs before any pipeline code loads
+- Private-beta access gate (`client/src/components/PasswordGate.jsx`) runs after compatibility — soft wall, not security; the expected code ships in the bundle. Default in code, override via `VITE_APP_PASSWORD` at build time. Bypassed in `MODE === 'debug'`; unlock persisted in `localStorage`.
 - Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
 - Part 3 (slideshow playback) is gated behind `FEATURES.slideshow` in `client/src/config.js`. Off in the production flow — curation's Celebration screen ends on a download CTA, no slideshow. The renderer still ships in the bundle and `/dev` always exercises it so design iteration continues independent of the flag.
 
