@@ -10,12 +10,14 @@ import { dedupStage } from './stages/dedup.js';
 import { clusterStage } from './stages/cluster.js';
 import { clusterSemanticStage } from './stages/clusterSemantic.js';
 import { embeddingStage } from './stages/embedding.js';
+import { aestheticScoreStage } from './stages/aestheticScore.js';
 import { heroSelectStage } from './stages/heroSelect.js';
 import { chapterBuilderStage } from './stages/chapterBuilder.js';
 import { thumbnailStage } from './stages/thumbnail.js';
 import { qualityScoreStage } from './stages/qualityScore.js';
 import { assembleSkeleton } from './runner.js';
 import { createMemoryManager } from '../memoryManager.js';
+import { FEATURES } from '../../config.js';
 
 export const PHASES = Object.freeze({
   IDLE: 'idle',
@@ -42,6 +44,7 @@ export async function runPhase1(files, deps = {}) {
     onStageStart = noop,
     onStageComplete = noop,
     useSemanticClustering = false,
+    useAestheticScoring = FEATURES.aestheticScoring,
     stages: stageOverrides = {},
   } = deps;
 
@@ -50,6 +53,7 @@ export async function runPhase1(files, deps = {}) {
     dedup: dedupStage,
     embedding: embeddingStage,
     cluster: useSemanticClustering ? clusterSemanticStage : clusterStage,
+    aestheticScore: aestheticScoreStage,
     heroSelect: heroSelectStage,
     chapterBuilder: chapterBuilderStage,
     thumbnail: thumbnailStage,
@@ -85,9 +89,23 @@ export async function runPhase1(files, deps = {}) {
   const clusterResult = await stages.cluster(preClusterInput, {}, emit('cluster'));
   onStageComplete('cluster', clusterResult);
 
+  // Optional vision-model aesthetic scoring. When enabled and the proxy is
+  // up, attaches per-photo aestheticScore that heroSelect prefers over the
+  // middle-photo heuristic. Disabled by default — see FEATURES.aestheticScoring.
+  let preHeroInput = clusterResult;
+  if (useAestheticScoring) {
+    onStageStart('aestheticScore');
+    preHeroInput = await stages.aestheticScore(
+      clusterResult,
+      {},
+      emit('aestheticScore'),
+    );
+    onStageComplete('aestheticScore', preHeroInput);
+  }
+
   onStageStart('heroSelect');
   const heroResult = await stages.heroSelect(
-    clusterResult,
+    preHeroInput,
     { highlightDates: [] },
     emit('heroSelect'),
   );

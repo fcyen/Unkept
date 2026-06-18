@@ -10,6 +10,7 @@
 import { clusterByDay, clusterByTimeGap } from './stages/cluster.js';
 import { dedupStage } from './stages/dedup.js';
 import { heroSelectStage } from './stages/heroSelect.js';
+import { aestheticScoreStage } from './stages/aestheticScore.js';
 
 const strategies = {
   cluster: {
@@ -21,6 +22,9 @@ const strategies = {
   },
   dedup: {
     default: dedupStage,
+  },
+  aestheticScore: {
+    default: aestheticScoreStage,
   },
 };
 

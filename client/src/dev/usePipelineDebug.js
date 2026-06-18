@@ -3,7 +3,7 @@ import { PHASES, runPhase1 } from '../lib/pipeline/orchestrator.js';
 import { dedupStage } from '../lib/pipeline/stages/dedup.js';
 
 export const STAGE_ORDER = [
-  'exif', 'dedup', 'embedding', 'cluster', 'heroSelect', 'chapterBuilder', 'thumbnail', 'qualityScore',
+  'exif', 'dedup', 'embedding', 'cluster', 'aestheticScore', 'heroSelect', 'chapterBuilder', 'thumbnail', 'qualityScore',
 ];
 
 export const STAGE_LABELS = {
@@ -11,6 +11,7 @@ export const STAGE_LABELS = {
   dedup: 'Dedup',
   embedding: 'Embed',
   cluster: 'Cluster',
+  aestheticScore: 'Aesthetic',
   heroSelect: 'Hero',
   chapterBuilder: 'Chapters',
   thumbnail: 'Thumbnail',
@@ -190,6 +191,42 @@ function extractSnapshot(name, output) {
         }
       }
       return { clusterCount: clusters.length, perPhoto };
+    }
+
+    case 'aestheticScore': {
+      const clusters = output.clusters ?? [];
+      const perPhoto = {};
+      const scores = [];
+      let scoredCount = 0;
+      let skippedCount = 0;
+      for (const cluster of clusters) {
+        for (const p of cluster) {
+          const hasScore = p.aestheticScore != null;
+          perPhoto[p.id] = {
+            score: p.aestheticScore ?? null,
+            keep: p.aestheticKeep ?? null,
+            reason: p.aestheticReason ?? null,
+          };
+          if (hasScore) {
+            scoredCount++;
+            scores.push(p.aestheticScore);
+          } else {
+            skippedCount++;
+          }
+        }
+      }
+      scores.sort((a, b) => a - b);
+      const avg = scores.length
+        ? Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 1000) / 1000
+        : null;
+      return {
+        scoredCount,
+        skippedCount,
+        avgScore: avg,
+        minScore: scores.length ? scores[0] : null,
+        maxScore: scores.length ? scores[scores.length - 1] : null,
+        perPhoto,
+      };
     }
 
     case 'heroSelect': {

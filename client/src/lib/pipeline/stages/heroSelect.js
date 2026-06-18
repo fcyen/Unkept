@@ -52,20 +52,31 @@ export async function heroSelectStage(input, options = {}, onProgress) {
 /**
  * Select the best hero photo index within a cluster.
  *
- * MVP logic:
- * - Default: pick the middle photo (avoids first/last which are often
- *   arrival/departure shots).
- * - If the cluster falls on a highlight date and has quality scores,
- *   prefer the highest-scoring photo.
- * - Future: weight by qualityScore, face count, etc.
+ * Logic, in priority order:
+ * 1. If any photo has an `aestheticScore` (from the vision proxy), pick the
+ *    highest. The vision model can see what sharpness alone can't —
+ *    expressions, eye contact, composition.
+ * 2. Otherwise, if the cluster falls on a highlight date and has quality
+ *    scores, prefer the highest-scoring photo.
+ * 3. Otherwise, the middle photo — avoids first/last arrival shots.
  */
 function selectHeroIndex(cluster, highlightDates) {
-  // Check if this cluster falls on a highlight date
+  // 1. Vision aesthetic score takes precedence when present.
+  let bestAestheticIdx = -1;
+  let bestAestheticScore = -1;
+  for (let i = 0; i < cluster.length; i++) {
+    if (cluster[i].aestheticScore != null && cluster[i].aestheticScore > bestAestheticScore) {
+      bestAestheticScore = cluster[i].aestheticScore;
+      bestAestheticIdx = i;
+    }
+  }
+  if (bestAestheticIdx !== -1) return bestAestheticIdx;
+
+  // 2. Highlight-date quality-score path.
   const clusterDate = getClusterDate(cluster);
   const isHighlighted = clusterDate && highlightDates.has(clusterDate);
 
   if (isHighlighted) {
-    // On highlight dates, prefer highest quality score (if available)
     let bestIdx = Math.floor(cluster.length / 2);
     let bestScore = -1;
 
@@ -78,7 +89,7 @@ function selectHeroIndex(cluster, highlightDates) {
     return bestIdx;
   }
 
-  // Default: middle photo
+  // 3. Default: middle photo.
   return Math.floor(cluster.length / 2);
 }
 
