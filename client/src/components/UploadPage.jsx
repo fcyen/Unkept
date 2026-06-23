@@ -215,7 +215,7 @@ export default function UploadPage({ onStoryReady }) {
           </h1>
           <div className="w-12 h-px bg-faint mx-auto mb-4" />
           <p className="font-sans text-muted text-sm tracking-wide">
-            Turn your photos into a beautiful narrative
+            Find the photos worth keeping
           </p>
         </div>
 
