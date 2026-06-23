@@ -1,12 +1,13 @@
-# Unkept
-
-**Cut a chaotic camera roll down to the photos worth keeping — runs entirely on browser, no photos leave the device**
-
 [![Netlify Status](https://api.netlify.com/api/v1/badges/cff4c3b2-815c-4c6f-a61b-be8204981a5e/deploy-status)](https://app.netlify.com/projects/unkept/deploys)
 
-[**Live demo**](https://unkept.netlify.app) · access code available on request — _it's a soft gate while the project is in private beta, not a security boundary._
+# Unkept
 
-![Unkept curation flow](docs/screenshots/hero.gif)
+**Cull messy camera roll down to meaningful collection — runs entirely on browser, no photos leave the device**
+
+[**Live demo**](https://unkept.netlify.app)
+
+<img width="250" height="auto" alt="Unkept Upload Screen" src="https://github.com/user-attachments/assets/4387b919-a7f0-4e99-9f93-2f0128cbd553" />
+<img width="250" height="auto" alt="Unkept Selection Screen" src="https://github.com/user-attachments/assets/b6cca184-c74c-441a-aff2-c265085951b6" />
 
 ---
 
