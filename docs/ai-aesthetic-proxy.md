@@ -124,7 +124,9 @@ shows a small `cached` tag in the comparison view.
 - Including the model name and prompt in the key means a **provider swap or a
   prompt edit invalidates automatically** (the new key simply misses).
 - `GET /api/aesthetic/health` reports the current entry count as `cached`.
-- To force a full re-score, delete `server/.aesthetic-cache.json` and restart.
+- To force a full re-score, use the **Clear cache** button on the `/pipeline`
+  aesthetic stage, `DELETE /api/aesthetic/cache`, or delete
+  `server/.aesthetic-cache.json` and restart.
 
 ## API reference
 
@@ -133,6 +135,12 @@ shows a small `cached` tag in the comparison view.
 Returns `{"status": "ok", "models": ["...", ...], "cached": <n>}` listing the
 configured models and the number of cached scores when at least one provider
 is set, `{"status": "unconfigured", "models": []}` (503) otherwise.
+
+### `DELETE /api/aesthetic/cache`
+
+Clears the score cache (in memory and the persisted file). Returns
+`{"status": "ok", "cached": 0}`. Backs the **Clear cache** button on the
+`/pipeline` aesthetic stage.
 
 ### `POST /api/aesthetic`
 

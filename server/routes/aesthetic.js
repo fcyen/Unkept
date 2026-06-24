@@ -36,7 +36,7 @@
  */
 import { Router } from 'express';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -185,6 +185,24 @@ router.get('/health', async (_req, res) => {
   if (provs.length === 0) return res.status(503).json({ status: 'unconfigured', models: [] });
   await loadCache();
   res.json({ status: 'ok', models: provs.map((p) => p.model), cached: cache.size });
+});
+
+// Clear the score cache — both in memory and the persisted file. Used by the
+// /pipeline "Clear cache" button to force a fresh re-score on the next run.
+router.delete('/cache', async (_req, res) => {
+  cache.clear();
+  cacheLoaded = true; // stay "loaded" — the cache is now intentionally empty
+  // Cancel any debounced save so it can't rewrite the file after deletion.
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  try {
+    await rm(CACHE_FILE, { force: true });
+  } catch (err) {
+    console.warn('[aesthetic] cache file removal failed:', err.message);
+  }
+  res.json({ status: 'ok', cached: 0 });
 });
 
 router.post('/', async (req, res) => {

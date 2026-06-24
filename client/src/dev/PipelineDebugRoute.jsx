@@ -3,6 +3,9 @@ import { PHASES } from '../lib/pipeline/orchestrator.js';
 import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
 import sampleImageUrls, { sampleImagesDir } from 'virtual:sample-images';
 
+// The aesthetic proxy (same host the aestheticScore stage posts to).
+const AESTHETIC_SERVER = 'http://localhost:3001';
+
 const CLUSTER_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
   '#8b5cf6', '#ec4899', '#06b6d4', '#f97316',
@@ -139,6 +142,7 @@ export default function PipelineDebugRoute() {
           <StageStats stage={selectedStage} snapshots={snapshots} />
           {selectedStage === 'aestheticScore' && snapshots.aestheticScore && (
             <>
+              <CacheControl />
               <VoteTally snapshots={snapshots} votes={modelVotes} />
               <ModelComparison
                 snapshots={snapshots}
@@ -290,6 +294,66 @@ function stageStat(stage, snap) {
     case 'qualityScore': return `avg ${snap.avgScore?.toFixed(3) ?? '—'}`;
     default: return '';
   }
+}
+
+// ── CacheControl ─────────────────────────────────────────────────────────────
+// Shows how many scores the proxy has cached and lets you wipe it, so the next
+// run re-scores from scratch. Hidden when the proxy is unreachable.
+
+function CacheControl() {
+  const [count, setCount] = useState(null); // null = unknown / proxy down
+  const [busy, setBusy] = useState(false);
+  const [cleared, setCleared] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${AESTHETIC_SERVER}/api/aesthetic/health`, {
+          signal: AbortSignal.timeout(2000),
+        });
+        const body = res.ok ? await res.json() : null;
+        if (active) setCount(typeof body?.cached === 'number' ? body.cached : null);
+      } catch {
+        if (active) setCount(null);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${AESTHETIC_SERVER}/api/aesthetic/cache`, { method: 'DELETE' });
+      if (res.ok) {
+        setCount(0);
+        setCleared(true);
+      }
+    } catch {
+      // Proxy went away mid-clear — leave the count as-is.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Proxy unreachable or didn't report a count — nothing to control.
+  if (count == null) return null;
+
+  return (
+    <div className="flex items-center justify-end gap-3 text-xs text-muted">
+      <span className="font-mono">
+        Score cache: {count} {count === 1 ? 'entry' : 'entries'}
+        {cleared && count === 0 && <span className="ml-1 not-italic">· cleared</span>}
+      </span>
+      <button
+        onClick={clear}
+        disabled={busy || count === 0}
+        className="underline underline-offset-2 disabled:opacity-40 disabled:no-underline"
+      >
+        {busy ? 'Clearing…' : 'Clear cache'}
+      </button>
+    </div>
+  );
 }
 
 // ── VoteTally ────────────────────────────────────────────────────────────────
