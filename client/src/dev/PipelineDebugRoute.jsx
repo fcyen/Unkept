@@ -3,6 +3,9 @@ import { PHASES } from '../lib/pipeline/orchestrator.js';
 import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
 import sampleImageUrls, { sampleImagesDir } from 'virtual:sample-images';
 
+// The aesthetic proxy (same host the aestheticScore stage posts to).
+const AESTHETIC_SERVER = 'http://localhost:3001';
+
 const CLUSTER_PALETTE = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
   '#8b5cf6', '#ec4899', '#06b6d4', '#f97316',
@@ -37,6 +40,9 @@ export default function PipelineDebugRoute() {
   const [sortByScore, setSortByScore] = useState(false);
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
   const [userDidReset, setUserDidReset] = useState(false);
+  // Per-photo "which model scored this better" votes: { [photoId]: modelLabel }.
+  // Lives only in the debug session — a quick way to A/B-judge the two models.
+  const [modelVotes, setModelVotes] = useState({});
   const autoStarted = useRef(false);
 
   useEffect(() => () => revokeAll(), [revokeAll]);
@@ -53,6 +59,17 @@ export default function PipelineDebugRoute() {
     reset();
     setUserDidReset(true);
     setSelectedPhotoId(null);
+    setModelVotes({});
+  };
+
+  // Toggle a vote: clicking the already-voted model clears it.
+  const handleVote = (photoId, model) => {
+    setModelVotes((prev) => {
+      const next = { ...prev };
+      if (next[photoId] === model) delete next[photoId];
+      else next[photoId] = model;
+      return next;
+    });
   };
 
   // Clear selection when stage changes
@@ -123,7 +140,19 @@ export default function PipelineDebugRoute() {
             onSelect={handleStageSelect}
           />
           <StageStats stage={selectedStage} snapshots={snapshots} />
-          {selectedPhotoId && (
+          {selectedStage === 'aestheticScore' && snapshots.aestheticScore && (
+            <>
+              <CacheControl />
+              <VoteTally snapshots={snapshots} votes={modelVotes} />
+              <ModelComparison
+                snapshots={snapshots}
+                photoId={selectedPhotoId}
+                vote={modelVotes[selectedPhotoId] ?? null}
+                onVote={handleVote}
+              />
+            </>
+          )}
+          {selectedPhotoId && selectedStage !== 'aestheticScore' && (
             <PhotoDetail
               photoId={selectedPhotoId}
               stage={selectedStage}
@@ -265,6 +294,212 @@ function stageStat(stage, snap) {
     case 'qualityScore': return `avg ${snap.avgScore?.toFixed(3) ?? '—'}`;
     default: return '';
   }
+}
+
+// ── CacheControl ─────────────────────────────────────────────────────────────
+// Shows how many scores the proxy has cached and lets you wipe it, so the next
+// run re-scores from scratch. Hidden when the proxy is unreachable.
+
+function CacheControl() {
+  const [count, setCount] = useState(null); // null = unknown / proxy down
+  const [busy, setBusy] = useState(false);
+  const [cleared, setCleared] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${AESTHETIC_SERVER}/api/aesthetic/health`, {
+          signal: AbortSignal.timeout(2000),
+        });
+        const body = res.ok ? await res.json() : null;
+        if (active) setCount(typeof body?.cached === 'number' ? body.cached : null);
+      } catch {
+        if (active) setCount(null);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${AESTHETIC_SERVER}/api/aesthetic/cache`, { method: 'DELETE' });
+      if (res.ok) {
+        setCount(0);
+        setCleared(true);
+      }
+    } catch {
+      // Proxy went away mid-clear — leave the count as-is.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Proxy unreachable or didn't report a count — nothing to control.
+  if (count == null) return null;
+
+  return (
+    <div className="flex items-center justify-end gap-3 text-xs text-muted">
+      <span className="font-mono">
+        Score cache: {count} {count === 1 ? 'entry' : 'entries'}
+        {cleared && count === 0 && <span className="ml-1 not-italic">· cleared</span>}
+      </span>
+      <button
+        onClick={clear}
+        disabled={busy || count === 0}
+        className="underline underline-offset-2 disabled:opacity-40 disabled:no-underline"
+      >
+        {busy ? 'Clearing…' : 'Clear cache'}
+      </button>
+    </div>
+  );
+}
+
+// ── VoteTally ────────────────────────────────────────────────────────────────
+// Running count of how many photos you preferred from each model. Aggregates
+// the per-photo votes so the A/B contrast resolves into a scoreboard.
+
+function VoteTally({ snapshots, votes }) {
+  const labels = snapshots.aestheticScore?.modelLabels ?? [];
+  if (labels.length === 0) return null;
+
+  const counts = labels.map((label) => ({
+    label,
+    count: Object.values(votes).filter((v) => v === label).length,
+  }));
+  const total = counts.reduce((s, c) => s + c.count, 0);
+  const leader = total > 0 ? Math.max(...counts.map((c) => c.count)) : 0;
+
+  return (
+    <div className="rounded-lg border border-faint bg-white px-4 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-muted uppercase tracking-wide">Preferred model</p>
+        <p className="text-xs text-muted font-mono">
+          {total} vote{total !== 1 ? 's' : ''}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        {counts.map(({ label, count }) => {
+          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+          const isLeader = total > 0 && count === leader;
+          return (
+            <div key={label} className="flex items-center gap-3">
+              <span className={`text-sm w-48 shrink-0 truncate ${isLeader ? 'text-ink font-medium' : 'text-muted'}`}>
+                {label}
+              </span>
+              <div className="flex-1 h-2 rounded-full bg-faint overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${isLeader ? 'bg-ink' : 'bg-ink/40'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="text-sm font-mono text-ink w-14 text-right shrink-0">
+                {count} · {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {total === 0 && (
+        <p className="text-xs text-muted mt-2">
+          Select a photo below and pick the model whose score you trust more.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── ModelComparison ──────────────────────────────────────────────────────────
+// Side-by-side scoring from each configured vision model, for the selected
+// photo. Provider A (models[0]) is the one heroSelect actually uses; the rest
+// are here purely to make the A/B contrast visible. Click a card to vote for
+// the model you think scored this photo better.
+
+function ModelComparison({ snapshots, photoId, vote, onVote }) {
+  const snap = snapshots.aestheticScore;
+  const labels = snap?.modelLabels ?? [];
+
+  // Stage ran but produced no scores at all (proxy down / feature off).
+  if ((snap?.scoredCount ?? 0) === 0 && labels.length === 0) return null;
+
+  if (!photoId) {
+    return (
+      <div className="rounded-lg border border-dashed border-ink/30 bg-white px-4 py-3 text-sm text-muted">
+        Select a photo below to compare model scores side by side.
+      </div>
+    );
+  }
+
+  const photo = snap?.perPhoto?.[photoId];
+  const models = photo?.models ?? null;
+
+  if (!models || models.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-ink/30 bg-white px-4 py-3 text-sm text-muted">
+        This photo was pre-filtered out before vision scoring — no model scores to compare.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="grid gap-3"
+      style={{ gridTemplateColumns: `repeat(${Math.min(models.length, 2)}, minmax(0, 1fr))` }}
+    >
+      {models.map((m, i) => {
+        const label = m.model ?? `Model ${i + 1}`;
+        const isVoted = vote != null && vote === m.model;
+        return (
+          <button
+            key={m.model ?? i}
+            type="button"
+            onClick={() => onVote(photoId, m.model)}
+            className={`text-left rounded-xl border bg-white px-4 py-3 transition-all cursor-pointer ${
+              isVoted
+                ? 'border-ink ring-2 ring-ink ring-offset-1'
+                : 'border-ink/20 hover:border-ink/50'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-ink">
+                Model: {label}
+                {i === 0 && <span className="ml-2 text-[10px] uppercase tracking-wide text-muted">primary</span>}
+              </p>
+              {isVoted && (
+                <span className="text-[10px] uppercase tracking-wide font-medium text-cream bg-ink rounded-full px-2 py-0.5 shrink-0">
+                  ★ preferred
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-mono mt-1.5 flex items-center gap-2">
+              <span>Score:</span>
+              <span
+                className="px-1.5 py-0.5 rounded text-white"
+                style={{ backgroundColor: scoreToColor(m.score) }}
+              >
+                {m.score != null ? m.score.toFixed(3) : '—'}
+              </span>
+              {m.keep != null && (
+                <span className="text-muted">keep: {String(m.keep)}</span>
+              )}
+              {m.cached && (
+                <span className="text-[10px] uppercase tracking-wide text-muted" title="Served from the proxy cache — no LLM call">
+                  cached
+                </span>
+              )}
+            </p>
+            <p className="text-sm text-muted mt-1.5">
+              Reason: {m.reason ? <span className="italic text-ink">“{m.reason}”</span> : '—'}
+            </p>
+            <p className="text-[11px] text-muted mt-2">
+              {isVoted ? 'Click again to clear your vote' : 'Click to prefer this model'}
+            </p>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── StageStats ───────────────────────────────────────────────────────────────
