@@ -126,7 +126,7 @@ export default function PipelineDebugRoute() {
           {selectedStage === 'aestheticScore' && snapshots.aestheticScore && (
             <ModelComparison snapshots={snapshots} photoId={selectedPhotoId} />
           )}
-          {selectedPhotoId && (
+          {selectedPhotoId && selectedStage !== 'aestheticScore' && (
             <PhotoDetail
               photoId={selectedPhotoId}
               stage={selectedStage}
