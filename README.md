@@ -58,7 +58,6 @@ npm install
 npm run dev
 ```
 
-That's the whole app — the selection pipeline, curation, and slideshow all run client-side. The opt-in `server/` services are not needed for the core experience.
 
 ```bash
 npm test          # vitest
