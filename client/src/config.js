@@ -8,7 +8,9 @@ export const FEATURES = {
   // server proxy at /api/aesthetic to be running with LLM_BASE_URL /
   // LLM_API_KEY / LLM_MODEL configured. When off, the pipeline skips the
   // stage entirely and hero selection uses the classical-CV heuristic.
-  // See docs/ai-aesthetic-proxy.md for setup.
+  // Configure an optional second provider (LLM_*_2) to score against two
+  // models and compare them side by side in /pipeline. See
+  // docs/ai-aesthetic-proxy.md for setup.
   aestheticScoring: true,
   // Beta usage telemetry. Driven by the VITE_BETA_TELEMETRY env var so the
   // beta deploy can flip it on with a build env change — no code edit. When

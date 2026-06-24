@@ -197,16 +197,26 @@ function extractSnapshot(name, output) {
       const clusters = output.clusters ?? [];
       const perPhoto = {};
       const scores = [];
+      const modelLabels = [];
       let scoredCount = 0;
       let skippedCount = 0;
       for (const cluster of clusters) {
         for (const p of cluster) {
           const hasScore = p.aestheticScore != null;
+          const models = p.aestheticModels ?? null;
           perPhoto[p.id] = {
             score: p.aestheticScore ?? null,
             keep: p.aestheticKeep ?? null,
             reason: p.aestheticReason ?? null,
+            models,
           };
+          // Collect the distinct model labels (in first-seen order) so the
+          // comparison panel can show stable column headers.
+          if (models) {
+            for (const m of models) {
+              if (m?.model && !modelLabels.includes(m.model)) modelLabels.push(m.model);
+            }
+          }
           if (hasScore) {
             scoredCount++;
             scores.push(p.aestheticScore);
@@ -225,6 +235,7 @@ function extractSnapshot(name, output) {
         avgScore: avg,
         minScore: scores.length ? scores[0] : null,
         maxScore: scores.length ? scores[scores.length - 1] : null,
+        modelLabels,
         perPhoto,
       };
     }

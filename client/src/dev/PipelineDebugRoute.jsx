@@ -123,6 +123,9 @@ export default function PipelineDebugRoute() {
             onSelect={handleStageSelect}
           />
           <StageStats stage={selectedStage} snapshots={snapshots} />
+          {selectedStage === 'aestheticScore' && snapshots.aestheticScore && (
+            <ModelComparison snapshots={snapshots} photoId={selectedPhotoId} />
+          )}
           {selectedPhotoId && (
             <PhotoDetail
               photoId={selectedPhotoId}
@@ -265,6 +268,72 @@ function stageStat(stage, snap) {
     case 'qualityScore': return `avg ${snap.avgScore?.toFixed(3) ?? '—'}`;
     default: return '';
   }
+}
+
+// ── ModelComparison ──────────────────────────────────────────────────────────
+// Side-by-side scoring from each configured vision model, for the selected
+// photo. Provider A (models[0]) is the one heroSelect actually uses; the rest
+// are here purely to make the A/B contrast visible.
+
+function ModelComparison({ snapshots, photoId }) {
+  const snap = snapshots.aestheticScore;
+  const labels = snap?.modelLabels ?? [];
+
+  // Stage ran but produced no scores at all (proxy down / feature off).
+  if ((snap?.scoredCount ?? 0) === 0 && labels.length === 0) return null;
+
+  if (!photoId) {
+    return (
+      <div className="rounded-lg border border-dashed border-ink/30 bg-white px-4 py-3 text-sm text-muted">
+        Select a photo below to compare model scores side by side.
+      </div>
+    );
+  }
+
+  const photo = snap?.perPhoto?.[photoId];
+  const models = photo?.models ?? null;
+
+  if (!models || models.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-ink/30 bg-white px-4 py-3 text-sm text-muted">
+        This photo was pre-filtered out before vision scoring — no model scores to compare.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="grid gap-3"
+      style={{ gridTemplateColumns: `repeat(${Math.min(models.length, 2)}, minmax(0, 1fr))` }}
+    >
+      {models.map((m, i) => (
+        <div
+          key={m.model ?? i}
+          className="rounded-xl border border-ink/20 bg-white px-4 py-3"
+        >
+          <p className="text-sm font-medium text-ink">
+            Model: {m.model ?? `Model ${i + 1}`}
+            {i === 0 && <span className="ml-2 text-[10px] uppercase tracking-wide text-muted">primary</span>}
+          </p>
+          <p className="text-sm font-mono mt-1.5 flex items-center gap-2">
+            <span>Score:</span>
+            <span
+              className="px-1.5 py-0.5 rounded text-white"
+              style={{ backgroundColor: scoreToColor(m.score) }}
+            >
+              {m.score != null ? m.score.toFixed(3) : '—'}
+            </span>
+            {m.keep != null && (
+              <span className="text-muted">keep: {String(m.keep)}</span>
+            )}
+          </p>
+          <p className="text-sm text-muted mt-1.5">
+            Reason: {m.reason ? <span className="italic text-ink">“{m.reason}”</span> : '—'}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ── StageStats ───────────────────────────────────────────────────────────────

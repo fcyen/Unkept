@@ -2,13 +2,25 @@
  * Vision aesthetic/keeper scoring proxy.
  *
  * POST /api/aesthetic  { photos: [{ id, data }, ...] }
- *   → { scores: [{ id, score, keep, reason } | null, ...] }
+ *   → { scores: [{ id, models: [{ model, score, keep, reason }, ...] } | null, ...] }
  *
- * Provider-agnostic OpenAI-compatible client. Configured via env:
- *   LLM_BASE_URL  e.g. https://api.moonshot.ai/v1   (Kimi)
- *                 e.g. https://api.openai.com/v1    (GPT-4o-mini)
- *   LLM_API_KEY   provider API key
- *   LLM_MODEL     e.g. moonshot-v1-8k-vision-preview, gpt-4o-mini
+ * Each photo is scored against every configured provider in parallel, so the
+ * `/pipeline` debug view can show a side-by-side comparison of two vision
+ * models. A per-provider failure drops only that model's slot — the photo
+ * still returns the models that succeeded.
+ *
+ * Provider-agnostic OpenAI-compatible clients. Provider A keeps the original
+ * env vars (backward compatible); provider B is optional:
+ *   LLM_BASE_URL    e.g. https://api.openai.com/v1   (provider A — primary)
+ *   LLM_API_KEY     provider A API key
+ *   LLM_MODEL       e.g. gpt-4o-mini
+ *   LLM_BASE_URL_2  e.g. https://api.moonshot.ai/v1  (provider B — optional)
+ *   LLM_API_KEY_2   provider B API key
+ *   LLM_MODEL_2     e.g. moonshot-v1-8k-vision-preview
+ *
+ * Provider A's score is the one the pipeline (heroSelect) actually uses; the
+ * second provider exists purely for the comparison overlay. With only A set,
+ * behaviour is identical to the single-model proxy.
  *
  * Privacy: thumbnails only (data URL, ≤512px), never the original file.
  * Per-photo errors return null in their slot — the batch never 500s.
@@ -20,6 +32,13 @@ import { Router } from 'express';
 
 const router = Router();
 
+// Provider A's env trio is listed first so it stays the primary/authoritative
+// model. Provider B is optional — absent vars are skipped silently.
+const PROVIDER_ENVS = [
+  { base: 'LLM_BASE_URL',   key: 'LLM_API_KEY',   model: 'LLM_MODEL' },
+  { base: 'LLM_BASE_URL_2', key: 'LLM_API_KEY_2', model: 'LLM_MODEL_2' },
+];
+
 const PROMPT = `Score a single photo for keep-worthiness in a personal year-in-review slideshow.
 Consider: subject clarity, expressions (eyes open, faces visible), composition, lighting.
 Penalize: motion blur, closed eyes, awkward crops, busy backgrounds.
@@ -27,30 +46,34 @@ Penalize: motion blur, closed eyes, awkward crops, busy backgrounds.
 Respond with ONLY strict JSON, no prose or fences:
 {"score": <0..1>, "keep": <true|false>, "reason": <string, <=12 words>}`;
 
-let client;   // undefined = not initialised, null = unavailable, object = ready
+// undefined = not initialised; otherwise an array (possibly empty) of
+// { client, model } in priority order — index 0 is the primary provider.
+let providers;
 
-async function getClient() {
-  if (client !== undefined) return client;
-  const baseURL = process.env.LLM_BASE_URL;
-  const apiKey = process.env.LLM_API_KEY;
-  if (!baseURL || !apiKey) {
-    console.warn('[aesthetic] LLM_BASE_URL / LLM_API_KEY not set — proxy disabled.');
-    client = null;
-    return null;
+async function getProviders() {
+  if (providers !== undefined) return providers;
+  providers = [];
+  let OpenAI;
+  for (const env of PROVIDER_ENVS) {
+    const baseURL = process.env[env.base];
+    const apiKey = process.env[env.key];
+    const modelName = process.env[env.model];
+    if (!baseURL || !apiKey || !modelName) continue;
+    if (!OpenAI) {
+      try {
+        ({ default: OpenAI } = await import('openai'));
+      } catch {
+        console.warn('[aesthetic] `openai` package not installed — run `npm install` in server/.');
+        providers = [];
+        return providers;
+      }
+    }
+    providers.push({ client: new OpenAI({ baseURL, apiKey }), model: modelName });
   }
-  try {
-    const { default: OpenAI } = await import('openai');
-    client = new OpenAI({ baseURL, apiKey });
-    return client;
-  } catch {
-    console.warn('[aesthetic] `openai` package not installed — run `npm install` in server/.');
-    client = null;
-    return null;
+  if (providers.length === 0) {
+    console.warn('[aesthetic] no provider configured (LLM_BASE_URL / LLM_API_KEY / LLM_MODEL) — proxy disabled.');
   }
-}
-
-function model() {
-  return process.env.LLM_MODEL || '';
+  return providers;
 }
 
 function parseScore(content) {
@@ -70,10 +93,10 @@ function parseScore(content) {
   return { score, keep, reason };
 }
 
-async function scoreOne(c, item) {
+async function scoreWithProvider(provider, item) {
   try {
-    const response = await c.chat.completions.create({
-      model: model(),
+    const response = await provider.client.chat.completions.create({
+      model: provider.model,
       max_tokens: 80,
       temperature: 0,
       messages: [
@@ -88,29 +111,38 @@ async function scoreOne(c, item) {
     });
     const parsed = parseScore(response.choices?.[0]?.message?.content);
     if (!parsed) return null;
-    return { id: item.id, ...parsed };
+    return { model: provider.model, ...parsed };
   } catch (err) {
-    console.warn('[aesthetic] score failed for', item.id, '-', err.message);
+    console.warn('[aesthetic] score failed for', item.id, 'on', provider.model, '-', err.message);
     return null;
   }
 }
 
 router.get('/health', async (_req, res) => {
-  const c = await getClient();
-  if (!c) return res.status(503).json({ status: 'unconfigured', model: null });
-  res.json({ status: 'ok', model: model() });
+  const provs = await getProviders();
+  if (provs.length === 0) return res.status(503).json({ status: 'unconfigured', models: [] });
+  res.json({ status: 'ok', models: provs.map((p) => p.model) });
 });
 
 router.post('/', async (req, res) => {
-  const c = await getClient();
-  if (!c) {
+  const provs = await getProviders();
+  if (provs.length === 0) {
     return res.status(503).json({ error: 'aesthetic proxy unconfigured' });
   }
   const { photos } = req.body ?? {};
   if (!Array.isArray(photos)) {
     return res.status(400).json({ error: 'expected { photos: [{ id, data }, ...] }' });
   }
-  const scores = await Promise.all(photos.map((item) => scoreOne(c, item)));
+  const scores = await Promise.all(
+    photos.map(async (item) => {
+      const results = await Promise.all(provs.map((p) => scoreWithProvider(p, item)));
+      const models = results.filter(Boolean);
+      // Drop the photo entirely only if every provider failed; otherwise
+      // return whichever models succeeded so the comparison can still render.
+      if (models.length === 0) return null;
+      return { id: item.id, models };
+    }),
+  );
   res.json({ scores });
 });
 
