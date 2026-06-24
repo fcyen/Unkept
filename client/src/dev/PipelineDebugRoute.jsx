@@ -37,6 +37,9 @@ export default function PipelineDebugRoute() {
   const [sortByScore, setSortByScore] = useState(false);
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
   const [userDidReset, setUserDidReset] = useState(false);
+  // Per-photo "which model scored this better" votes: { [photoId]: modelLabel }.
+  // Lives only in the debug session — a quick way to A/B-judge the two models.
+  const [modelVotes, setModelVotes] = useState({});
   const autoStarted = useRef(false);
 
   useEffect(() => () => revokeAll(), [revokeAll]);
@@ -53,6 +56,17 @@ export default function PipelineDebugRoute() {
     reset();
     setUserDidReset(true);
     setSelectedPhotoId(null);
+    setModelVotes({});
+  };
+
+  // Toggle a vote: clicking the already-voted model clears it.
+  const handleVote = (photoId, model) => {
+    setModelVotes((prev) => {
+      const next = { ...prev };
+      if (next[photoId] === model) delete next[photoId];
+      else next[photoId] = model;
+      return next;
+    });
   };
 
   // Clear selection when stage changes
@@ -124,7 +138,15 @@ export default function PipelineDebugRoute() {
           />
           <StageStats stage={selectedStage} snapshots={snapshots} />
           {selectedStage === 'aestheticScore' && snapshots.aestheticScore && (
-            <ModelComparison snapshots={snapshots} photoId={selectedPhotoId} />
+            <>
+              <VoteTally snapshots={snapshots} votes={modelVotes} />
+              <ModelComparison
+                snapshots={snapshots}
+                photoId={selectedPhotoId}
+                vote={modelVotes[selectedPhotoId] ?? null}
+                onVote={handleVote}
+              />
+            </>
           )}
           {selectedPhotoId && selectedStage !== 'aestheticScore' && (
             <PhotoDetail
@@ -270,12 +292,67 @@ function stageStat(stage, snap) {
   }
 }
 
+// ── VoteTally ────────────────────────────────────────────────────────────────
+// Running count of how many photos you preferred from each model. Aggregates
+// the per-photo votes so the A/B contrast resolves into a scoreboard.
+
+function VoteTally({ snapshots, votes }) {
+  const labels = snapshots.aestheticScore?.modelLabels ?? [];
+  if (labels.length === 0) return null;
+
+  const counts = labels.map((label) => ({
+    label,
+    count: Object.values(votes).filter((v) => v === label).length,
+  }));
+  const total = counts.reduce((s, c) => s + c.count, 0);
+  const leader = total > 0 ? Math.max(...counts.map((c) => c.count)) : 0;
+
+  return (
+    <div className="rounded-lg border border-faint bg-white px-4 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-muted uppercase tracking-wide">Preferred model</p>
+        <p className="text-xs text-muted font-mono">
+          {total} vote{total !== 1 ? 's' : ''}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        {counts.map(({ label, count }) => {
+          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+          const isLeader = total > 0 && count === leader;
+          return (
+            <div key={label} className="flex items-center gap-3">
+              <span className={`text-sm w-48 shrink-0 truncate ${isLeader ? 'text-ink font-medium' : 'text-muted'}`}>
+                {label}
+              </span>
+              <div className="flex-1 h-2 rounded-full bg-faint overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${isLeader ? 'bg-ink' : 'bg-ink/40'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="text-sm font-mono text-ink w-14 text-right shrink-0">
+                {count} · {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {total === 0 && (
+        <p className="text-xs text-muted mt-2">
+          Select a photo below and pick the model whose score you trust more.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── ModelComparison ──────────────────────────────────────────────────────────
 // Side-by-side scoring from each configured vision model, for the selected
 // photo. Provider A (models[0]) is the one heroSelect actually uses; the rest
-// are here purely to make the A/B contrast visible.
+// are here purely to make the A/B contrast visible. Click a card to vote for
+// the model you think scored this photo better.
 
-function ModelComparison({ snapshots, photoId }) {
+function ModelComparison({ snapshots, photoId, vote, onVote }) {
   const snap = snapshots.aestheticScore;
   const labels = snap?.modelLabels ?? [];
 
@@ -306,32 +383,52 @@ function ModelComparison({ snapshots, photoId }) {
       className="grid gap-3"
       style={{ gridTemplateColumns: `repeat(${Math.min(models.length, 2)}, minmax(0, 1fr))` }}
     >
-      {models.map((m, i) => (
-        <div
-          key={m.model ?? i}
-          className="rounded-xl border border-ink/20 bg-white px-4 py-3"
-        >
-          <p className="text-sm font-medium text-ink">
-            Model: {m.model ?? `Model ${i + 1}`}
-            {i === 0 && <span className="ml-2 text-[10px] uppercase tracking-wide text-muted">primary</span>}
-          </p>
-          <p className="text-sm font-mono mt-1.5 flex items-center gap-2">
-            <span>Score:</span>
-            <span
-              className="px-1.5 py-0.5 rounded text-white"
-              style={{ backgroundColor: scoreToColor(m.score) }}
-            >
-              {m.score != null ? m.score.toFixed(3) : '—'}
-            </span>
-            {m.keep != null && (
-              <span className="text-muted">keep: {String(m.keep)}</span>
-            )}
-          </p>
-          <p className="text-sm text-muted mt-1.5">
-            Reason: {m.reason ? <span className="italic text-ink">“{m.reason}”</span> : '—'}
-          </p>
-        </div>
-      ))}
+      {models.map((m, i) => {
+        const label = m.model ?? `Model ${i + 1}`;
+        const isVoted = vote != null && vote === m.model;
+        return (
+          <button
+            key={m.model ?? i}
+            type="button"
+            onClick={() => onVote(photoId, m.model)}
+            className={`text-left rounded-xl border bg-white px-4 py-3 transition-all cursor-pointer ${
+              isVoted
+                ? 'border-ink ring-2 ring-ink ring-offset-1'
+                : 'border-ink/20 hover:border-ink/50'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-ink">
+                Model: {label}
+                {i === 0 && <span className="ml-2 text-[10px] uppercase tracking-wide text-muted">primary</span>}
+              </p>
+              {isVoted && (
+                <span className="text-[10px] uppercase tracking-wide font-medium text-cream bg-ink rounded-full px-2 py-0.5 shrink-0">
+                  ★ preferred
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-mono mt-1.5 flex items-center gap-2">
+              <span>Score:</span>
+              <span
+                className="px-1.5 py-0.5 rounded text-white"
+                style={{ backgroundColor: scoreToColor(m.score) }}
+              >
+                {m.score != null ? m.score.toFixed(3) : '—'}
+              </span>
+              {m.keep != null && (
+                <span className="text-muted">keep: {String(m.keep)}</span>
+              )}
+            </p>
+            <p className="text-sm text-muted mt-1.5">
+              Reason: {m.reason ? <span className="italic text-ink">“{m.reason}”</span> : '—'}
+            </p>
+            <p className="text-[11px] text-muted mt-2">
+              {isVoted ? 'Click again to clear your vote' : 'Click to prefer this model'}
+            </p>
+          </button>
+        );
+      })}
     </div>
   );
 }
