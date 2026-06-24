@@ -419,6 +419,11 @@ function ModelComparison({ snapshots, photoId, vote, onVote }) {
               {m.keep != null && (
                 <span className="text-muted">keep: {String(m.keep)}</span>
               )}
+              {m.cached && (
+                <span className="text-[10px] uppercase tracking-wide text-muted" title="Served from the proxy cache — no LLM call">
+                  cached
+                </span>
+              )}
             </p>
             <p className="text-sm text-muted mt-1.5">
               Reason: {m.reason ? <span className="italic text-ink">“{m.reason}”</span> : '—'}

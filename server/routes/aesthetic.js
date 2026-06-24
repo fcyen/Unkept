@@ -27,8 +27,18 @@
  *
  * The `openai` package is imported lazily so the server still boots if
  * it hasn't been installed yet.
+ *
+ * Caching: vision scores are deterministic for a given (model, prompt,
+ * image), and the /pipeline dev loop re-scores the same sample images on
+ * every run. Results are content-addressed and cached so a re-run is a
+ * cache hit and never re-bills the LLM. The cache is persisted to
+ * `server/.aesthetic-cache.json` (gitignored) so it survives restarts.
  */
 import { Router } from 'express';
+import { createHash } from 'node:crypto';
+import { readFile, writeFile, rename } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const router = Router();
 
@@ -45,6 +55,52 @@ Penalize: motion blur, closed eyes, awkward crops, busy backgrounds.
 
 Respond with ONLY strict JSON, no prose or fences:
 {"score": <0..1>, "keep": <true|false>, "reason": <string, <=12 words>}`;
+
+// ── Content-addressed score cache ────────────────────────────────────────────
+// Keyed by sha256(model + prompt + image data). Including the model and prompt
+// means a provider swap or prompt edit naturally misses and re-scores. Only
+// successful parses are cached, so transient errors get retried next run.
+const CACHE_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', '.aesthetic-cache.json');
+const cache = new Map();
+let cacheLoaded = false;
+let saveTimer = null;
+
+async function loadCache() {
+  if (cacheLoaded) return;
+  cacheLoaded = true;
+  try {
+    const obj = JSON.parse(await readFile(CACHE_FILE, 'utf8'));
+    for (const [k, v] of Object.entries(obj)) cache.set(k, v);
+    console.log(`[aesthetic] loaded ${cache.size} cached score(s) from ${CACHE_FILE}`);
+  } catch {
+    // No cache file yet (or unreadable) — start empty.
+  }
+}
+
+// Debounced atomic write: coalesce a burst of new entries into one save, and
+// write-then-rename so a crash mid-write can't corrupt the file.
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(async () => {
+    saveTimer = null;
+    try {
+      const tmp = `${CACHE_FILE}.tmp`;
+      await writeFile(tmp, JSON.stringify(Object.fromEntries(cache)));
+      await rename(tmp, CACHE_FILE);
+    } catch (err) {
+      console.warn('[aesthetic] cache save failed:', err.message);
+    }
+  }, 1000);
+  if (saveTimer.unref) saveTimer.unref();
+}
+
+function cacheKey(model, data) {
+  return createHash('sha256')
+    .update(model).update('\0')
+    .update(PROMPT).update('\0')
+    .update(data)
+    .digest('hex');
+}
 
 // undefined = not initialised; otherwise an array (possibly empty) of
 // { client, model } in priority order — index 0 is the primary provider.
@@ -94,6 +150,10 @@ function parseScore(content) {
 }
 
 async function scoreWithProvider(provider, item) {
+  const key = cacheKey(provider.model, item.data);
+  const hit = cache.get(key);
+  if (hit) return { model: provider.model, ...hit, cached: true };
+
   try {
     const response = await provider.client.chat.completions.create({
       model: provider.model,
@@ -111,6 +171,8 @@ async function scoreWithProvider(provider, item) {
     });
     const parsed = parseScore(response.choices?.[0]?.message?.content);
     if (!parsed) return null;
+    cache.set(key, parsed);
+    scheduleSave();
     return { model: provider.model, ...parsed };
   } catch (err) {
     console.warn('[aesthetic] score failed for', item.id, 'on', provider.model, '-', err.message);
@@ -121,7 +183,8 @@ async function scoreWithProvider(provider, item) {
 router.get('/health', async (_req, res) => {
   const provs = await getProviders();
   if (provs.length === 0) return res.status(503).json({ status: 'unconfigured', models: [] });
-  res.json({ status: 'ok', models: provs.map((p) => p.model) });
+  await loadCache();
+  res.json({ status: 'ok', models: provs.map((p) => p.model), cached: cache.size });
 });
 
 router.post('/', async (req, res) => {
@@ -129,6 +192,7 @@ router.post('/', async (req, res) => {
   if (provs.length === 0) {
     return res.status(503).json({ error: 'aesthetic proxy unconfigured' });
   }
+  await loadCache();
   const { photos } = req.body ?? {};
   if (!Array.isArray(photos)) {
     return res.status(400).json({ error: 'expected { photos: [{ id, data }, ...] }' });

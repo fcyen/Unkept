@@ -108,13 +108,31 @@ Laplacian variance on a 128px canvas and keeps the top-3 candidates by
 sharpness. Only those candidates are encoded to 512px JPEGs and posted to
 the proxy. Small clusters (≤3 photos) are sent whole.
 
+## Caching
+
+Vision scores are deterministic for a given `(model, prompt, image)`, and the
+`/pipeline` dev loop re-scores the same sample images on every run. The proxy
+caches each result content-addressed by `sha256(model + prompt + image data)`,
+so a re-run is a cache hit and never re-bills the LLM. Each cached model card
+shows a small `cached` tag in the comparison view.
+
+- The cache persists to `server/.aesthetic-cache.json` (gitignored) so it
+  survives server restarts. Writes are debounced and atomic (temp file +
+  rename).
+- Only successful parses are cached — a model timeout or unparseable response
+  is retried on the next run.
+- Including the model name and prompt in the key means a **provider swap or a
+  prompt edit invalidates automatically** (the new key simply misses).
+- `GET /api/aesthetic/health` reports the current entry count as `cached`.
+- To force a full re-score, delete `server/.aesthetic-cache.json` and restart.
+
 ## API reference
 
 ### `GET /api/aesthetic/health`
 
-Returns `{"status": "ok", "models": ["...", ...]}` listing the configured
-models when at least one provider is set, `{"status": "unconfigured",
-"models": []}` (503) otherwise.
+Returns `{"status": "ok", "models": ["...", ...], "cached": <n>}` listing the
+configured models and the number of cached scores when at least one provider
+is set, `{"status": "unconfigured", "models": []}` (503) otherwise.
 
 ### `POST /api/aesthetic`
 
