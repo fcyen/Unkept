@@ -256,6 +256,9 @@ function stageStat(stage, snap) {
       ? `${snap.embeddedCount} embedded · ${snap.nullCount} skipped`
       : 'skipped';
     case 'cluster':      return `${snap.clusterCount} clusters`;
+    case 'aestheticScore': return snap.scoredCount != null && snap.scoredCount > 0
+      ? `${snap.scoredCount} scored · avg ${snap.avgScore?.toFixed(3) ?? '—'}`
+      : 'skipped';
     case 'heroSelect':   return `${snap.heroCount} hero${snap.heroCount !== 1 ? 's' : ''}`;
     case 'chapterBuilder': return `${snap.chapterCount} chapters · ${snap.selectedCount} photos`;
     case 'thumbnail':    return `${snap.generatedCount} ok · ${snap.failedCount} failed`;
@@ -305,6 +308,23 @@ function StageStats({ stage, snapshots }) {
       const isSemantic = snap.clusterCount > 0 && snapshots.embedding?.embeddedCount > 0;
       const mode = isSemantic ? 'visual content (CLIP k-means)' : 'calendar day';
       lines = [`${Object.keys(snap.perPhoto).length} photos → ${snap.clusterCount} clusters (grouped by ${mode}).`];
+      break;
+    }
+    case 'aestheticScore': {
+      if (snap.scoredCount === 0 && snap.skippedCount === 0) {
+        lines = ['Aesthetic stage was not run (FEATURES.aestheticScoring is off).'];
+      } else if (snap.scoredCount === 0) {
+        lines = [
+          'Aesthetic proxy was unreachable — all scores are null.',
+          'Start the proxy (see docs/ai-aesthetic-proxy.md) and run again.',
+        ];
+      } else {
+        lines = [
+          `Vision model scored ${snap.scoredCount} photo${snap.scoredCount !== 1 ? 's' : ''} (${snap.skippedCount} pre-filtered out by cheap Laplacian).`,
+          `Range: ${snap.minScore?.toFixed(3) ?? '—'} – ${snap.maxScore?.toFixed(3) ?? '—'} · avg ${snap.avgScore?.toFixed(3) ?? '—'}.`,
+          'Click any scored photo to see the model’s one-line reason.',
+        ];
+      }
       break;
     }
     case 'heroSelect':
@@ -413,6 +433,8 @@ function getNumericScore(id, stage, snapshots) {
       return p.rawVariance ?? (p.status === 'ok' ? 0 : -1);
     case 'qualityScore':
       return p.score;
+    case 'aestheticScore':
+      return p.score;
     default:
       return null;
   }
@@ -505,6 +527,12 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
     ['Orientation', exif.orientation != null ? String(exif.orientation) : null],
   ].filter(([, v]) => v != null);
 
+  // Aesthetic detail: the model's score + one-line reason. Visible whenever
+  // the photo was scored, not only when the Aesthetic stage is selected, so
+  // you can correlate it with hero picks from the Hero tab.
+  const aestheticSnap = snapshots.aestheticScore?.perPhoto?.[photoId];
+  const aestheticVisible = aestheticSnap && aestheticSnap.score != null;
+
   // Dedup pair view: when inspecting a burst photo, show its matched rep;
   // when inspecting a kept rep that absorbed candidates, show them.
   const dedupSnap = snapshots.dedup?.perPhoto?.[photoId];
@@ -556,6 +584,25 @@ function PhotoDetail({ photoId, stage, snapshots, getPreviewUrl, onClose }) {
           ))}
         </div>
       </div>
+      {aestheticVisible && (
+        <div className="px-4 py-3 border-t border-faint">
+          <p className="text-xs text-muted uppercase tracking-wide mb-1.5">Aesthetic (vision)</p>
+          <div className="flex items-center gap-3">
+            <span
+              className="text-xs font-mono px-1.5 py-0.5 rounded text-white"
+              style={{ backgroundColor: scoreToColor(aestheticSnap.score) }}
+            >
+              {aestheticSnap.score.toFixed(3)}
+            </span>
+            <span className="text-xs font-mono text-muted">
+              keep: {aestheticSnap.keep == null ? '—' : String(aestheticSnap.keep)}
+            </span>
+            {aestheticSnap.reason && (
+              <span className="text-xs text-ink italic">“{aestheticSnap.reason}”</span>
+            )}
+          </div>
+        </div>
+      )}
       {dedupPairs && (
         <div className="px-4 py-3 border-t border-faint">
           <p className="text-xs text-muted uppercase tracking-wide mb-2">{dedupPairs.heading}</p>
@@ -684,6 +731,17 @@ function getAnnotation(photoId, stage, snapshots) {
       return {
         label: score != null ? score.toFixed(3) : 'null',
         color: scoreToColor(score),
+      };
+    }
+
+    case 'aestheticScore': {
+      if (!p) return { label: 'no score', color: '#9ca3af' };
+      const score = p.score;
+      if (score == null) return { label: 'skipped', color: '#9ca3af' };
+      return {
+        label: score.toFixed(3),
+        color: scoreToColor(score),
+        overlay: p.reason ? p.reason : null,
       };
     }
 

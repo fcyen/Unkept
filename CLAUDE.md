@@ -7,8 +7,11 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ```
 /  (repo root)
   client/       React + Vite + Tailwind (all active development)
-  server/       Opt-in backend — neither service is on the live MVP path:
-    index.js, routes/   Express itinerary-matching stub (Phase 3, not in active development)
+  server/       Opt-in backend — none of these services are on the live MVP path:
+    index.js, routes/   Express itinerary-matching stub (Phase 3, not in active development),
+                        plus routes/aesthetic.js: OpenAI-compatible vision proxy for the
+                        keeper-scoring pipeline stage (opt-in, off by default — see
+                        FEATURES.aestheticScoring and docs/ai-aesthetic-proxy.md)
     embed/              FastAPI CLIP ViT-B/32 embedding server — local dev tool only, called by
                         the embedding pipeline stage when semantic clustering is enabled (/pipeline)
   EXECUTIVE-SUMMARY.md   Product overview
@@ -40,6 +43,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Private-beta access gate (`client/src/components/PasswordGate.jsx`) runs after compatibility — soft wall, not security; the expected code ships in the bundle. Default in code, override via `VITE_APP_PASSWORD` at build time. Bypassed in `MODE === 'debug'`; unlock persisted in `localStorage`.
 - Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
 - Part 3 (slideshow playback) is gated behind `FEATURES.slideshow` in `client/src/config.js`. Off in the production flow — curation's Celebration screen ends on a download CTA, no slideshow. The renderer still ships in the bundle and `/dev` always exercises it so design iteration continues independent of the flag.
+- Vision keeper-scoring (`stages/aestheticScore.js`) is gated behind `FEATURES.aestheticScoring`. Off by default — when on, the proxy in `server/routes/aesthetic.js` fronts a swappable OpenAI-compatible vision LLM (dev on Kimi K2.6, demo on GPT-4o-mini — provider swap is a pure env change). Cheap Laplacian variance per cluster gates the expensive model: only the top-3 candidates per cluster reach the LLM. When the proxy is down, `heroSelect` falls back cleanly to its classical heuristic.
 
 ## Dev tooling
 - `/pipeline` route renders per-stage debug snapshots. The dedup stage in particular surfaces hamming distances on every card and shows the 8×8 block-mean tile that the hash actually sees, side-by-side with the original thumbnail. When tuning a perceptual stage, work from this view rather than guessing.

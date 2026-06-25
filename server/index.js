@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import uploadRouter from './routes/upload.js';
 import itineraryRouter from './routes/itinerary.js';
 import storyRouter from './routes/story.js';
+import aestheticRouter from './routes/aesthetic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -18,7 +19,9 @@ app.locals.store = {
 };
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Vision aesthetic scoring can carry several base64-encoded 512px JPEGs per
+// request — bump the body limit so a cluster's worth of thumbnails fits.
+app.use(express.json({ limit: '25mb' }));
 
 // Serve uploaded photos
 app.use('/api/photos', express.static(path.join(__dirname, 'uploads')));
@@ -27,6 +30,7 @@ app.use('/api/photos', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/upload', uploadRouter);
 app.use('/api/itinerary', itineraryRouter);
 app.use('/api/story', storyRouter);
+app.use('/api/aesthetic', aestheticRouter);
 
 app.listen(PORT, () => {
   console.log(`Unkept server running on http://localhost:${PORT}`);
