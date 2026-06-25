@@ -9,7 +9,7 @@ export const FEATURES = {
   // LLM_API_KEY / LLM_MODEL configured. When off, the pipeline skips the
   // stage entirely and hero selection uses the classical-CV heuristic.
   // See docs/ai-aesthetic-proxy.md for setup.
-  aestheticScoring: true,
+  aestheticScoring: false,
   // Beta usage telemetry. Driven by the VITE_BETA_TELEMETRY env var so the
   // beta deploy can flip it on with a build env change — no code edit. When
   // off, `track()` is a no-op and nothing is sent. Anonymous, non-identifying
