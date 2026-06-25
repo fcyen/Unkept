@@ -8,6 +8,53 @@ import BottomStrip from './BottomStrip.jsx';
 import ProgressBar from './ProgressBar.jsx';
 import Celebration from './Celebration.jsx';
 
+// Distribute `targetCount` across chapters so the per-chapter picks sum to
+// exactly targetCount (largest-remainder / Hamilton method). Naive per-chapter
+// rounding drifts; this floors each chapter's fractional quota, then hands the
+// leftover slots to the chapters with the largest remainders. Each chapter is
+// capped at its own photo count, and — per the "exact total wins" policy — a
+// chapter can be allocated 0 when targetCount < chapter count.
+export function allocateTargets(chapters, totalPhotos, targetCount) {
+  const cap = targetCount > 0 ? Math.min(targetCount, totalPhotos) : 0;
+  const quotas = chapters.map((ch) => {
+    const exact = (ch.photoIds.length / totalPhotos) * cap;
+    return { id: ch.id, exact, max: ch.photoIds.length };
+  });
+  const alloc = quotas.map((q) => Math.min(q.max, Math.floor(q.exact)));
+  let remaining = cap - alloc.reduce((s, n) => s + n, 0);
+  const order = quotas
+    .map((q, i) => ({ i, frac: q.exact - Math.floor(q.exact) }))
+    .sort((a, b) => b.frac - a.frac);
+  // May take more than one pass if the highest-remainder chapters hit their cap.
+  while (remaining > 0) {
+    let progressed = false;
+    for (const { i } of order) {
+      if (remaining <= 0) break;
+      if (alloc[i] < quotas[i].max) { alloc[i] += 1; remaining -= 1; progressed = true; }
+    }
+    if (!progressed) break; // every chapter at cap — can't place the rest
+  }
+  return new Map(quotas.map((q, i) => [q.id, alloc[i]]));
+}
+
+// Top-k photos in a chapter. The hero is always rank-1 (heroSelect already chose
+// it as the chapter's best), then the remaining k-1 slots are filled by the same
+// ranking heroSelect uses: vision aesthetic score first, then quality (Laplacian)
+// score, nulls last.
+export function pickTopK(photoIds, photosMap, heroPhotoId, k) {
+  if (k <= 0) return [];
+  const rest = photoIds
+    .filter((id) => id !== heroPhotoId)
+    .map((id) => photosMap[id])
+    .filter(Boolean)
+    .sort((a, b) =>
+      (b.aestheticScore ?? -1) - (a.aestheticScore ?? -1)
+      || (b.qualityScore ?? -1) - (a.qualityScore ?? -1))
+    .map((p) => p.id);
+  const ordered = heroPhotoId ? [heroPhotoId, ...rest] : rest;
+  return ordered.slice(0, k);
+}
+
 // Build the view-model the curation UI consumes from a Story / Story Skeleton.
 function buildViewModel(story) {
   const skeleton = story.skeleton || story; // accept either
@@ -25,22 +72,37 @@ function buildViewModel(story) {
   const surveyTarget = skeleton.meta?.surveyResponses?.targetCount;
   const totalPhotos = Object.keys(photosMap).length || 1;
 
-  const chapters = (skeleton.chapters || []).map((ch, i) => {
+  // When the survey gave a targetCount, pre-select exactly that many photos by
+  // allocating the count across chapters (exact total) and taking the top-k in
+  // each. Without a survey target, fall back to one hero per chapter and a
+  // proportional ~20% target for the progress UI.
+  const skeletonChapters = skeleton.chapters || [];
+  const allocation = surveyTarget
+    ? allocateTargets(skeletonChapters, totalPhotos, surveyTarget)
+    : null;
+
+  const chapters = skeletonChapters.map((ch, i) => {
     const chapterPhotoIds = ch.photoIds || [];
-    const proportional = surveyTarget
-      ? Math.max(1, Math.round((chapterPhotoIds.length / totalPhotos) * surveyTarget))
-      : Math.min(8, Math.max(1, Math.round(chapterPhotoIds.length * 0.2)));
     const fromStory = story.chapters?.[i];
     // sub = "Day N" tag; name = location label only when geocoding resolved.
     // When there's no location we render the day alone (no "Day 1 · Day 1").
     const sub = `Day ${fromStory?.dayIndex || i + 1}`;
     const name = fromStory?.location?.label || '';
-    const starter = ch.heroPhotoId ? [ch.heroPhotoId] : chapterPhotoIds.slice(0, 1);
+
+    let target;
+    let starter;
+    if (allocation) {
+      target = allocation.get(ch.id) || 0;
+      starter = pickTopK(chapterPhotoIds, photosMap, ch.heroPhotoId, target);
+    } else {
+      target = Math.min(8, Math.max(1, Math.round(chapterPhotoIds.length * 0.2)));
+      starter = ch.heroPhotoId ? [ch.heroPhotoId] : chapterPhotoIds.slice(0, 1);
+    }
     return {
       id: ch.id,
       name,
       sub,
-      target: proportional,
+      target,
       starter,
       photoIds: chapterPhotoIds,
     };
