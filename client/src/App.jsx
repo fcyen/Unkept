@@ -92,7 +92,7 @@ export default function App() {
     return <CompatibilityBlock checks={compatibility.checks} />;
   }
 
-  if (!unlocked) {
+  if (FEATURES.accessGate && !unlocked) {
     return <PasswordGate onUnlock={() => setUnlocked(true)} />;
   }
 
