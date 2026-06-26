@@ -15,6 +15,11 @@ export const FEATURES = {
   // off, `track()` is a no-op and nothing is sent. Anonymous, non-identifying
   // counts only; see client/src/lib/analytics.js for the privacy guardrails.
   betaTelemetry: import.meta.env.VITE_BETA_TELEMETRY === 'true',
+  // Private-beta access code gate (client/src/components/PasswordGate.jsx).
+  // Off — the app opens straight to the upload flow. The component stays in
+  // the bundle so the gate can be re-enabled with a one-line flip (or wired
+  // to an env var) without restoring the wiring.
+  accessGate: false,
 };
 
 // Public URL of the Supabase Edge Function that ingests telemetry. This is
