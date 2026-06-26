@@ -88,14 +88,16 @@ describe('pickTopK', () => {
     expect(picks).toEqual(['hero', 'p1', 'p2']);
   });
 
-  it('prefers aesthetic score over quality score when present', () => {
+  it('ranks fill photos by quality score, ignoring aesthetic score', () => {
+    // aestheticScore is sparse and a different scale, so it must not influence
+    // the fill order — only qualityScore (and the hero is pinned to rank 1).
     const map = {
       hero: { id: 'hero', aestheticScore: 0.2, qualityScore: 0.9 },
       a: { id: 'a', aestheticScore: 0.8, qualityScore: 0.1 },
       b: { id: 'b', aestheticScore: 0.4, qualityScore: 0.9 },
     };
     const picks = pickTopK(['hero', 'a', 'b'], map, 'hero', 3);
-    expect(picks).toEqual(['hero', 'a', 'b']);
+    expect(picks).toEqual(['hero', 'b', 'a']);
   });
 
   it('returns just the hero at k=1', () => {
