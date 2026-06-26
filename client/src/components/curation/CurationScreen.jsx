@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './curation.css';
 import { track } from '../../lib/analytics.js';
+import { qualityErrorHistogram } from '../../lib/curationSignal.js';
 import ChapterRail from './ChapterRail.jsx';
 import MainPhoto from './MainPhoto.jsx';
 import RightStrip from './RightStrip.jsx';
@@ -38,18 +39,19 @@ export function allocateTargets(chapters, totalPhotos, targetCount) {
 }
 
 // Top-k photos in a chapter. The hero is always rank-1 (heroSelect already chose
-// it as the chapter's best), then the remaining k-1 slots are filled by the same
-// ranking heroSelect uses: vision aesthetic score first, then quality (Laplacian)
-// score, nulls last.
+// it as the chapter's best — possibly using the vision aesthetic score), then the
+// remaining k-1 slots are filled by quality (Laplacian) score, nulls last.
+// We rank the fill on quality alone rather than aesthetic-then-quality: the
+// aesthetic score is sparse (only the top-3 per cluster reach the vision model),
+// so mixing the two scales would let merely *having* a vision score outrank a
+// sharper photo. Quality is present on every photo and single-scale.
 export function pickTopK(photoIds, photosMap, heroPhotoId, k) {
   if (k <= 0) return [];
   const rest = photoIds
     .filter((id) => id !== heroPhotoId)
     .map((id) => photosMap[id])
     .filter(Boolean)
-    .sort((a, b) =>
-      (b.aestheticScore ?? -1) - (a.aestheticScore ?? -1)
-      || (b.qualityScore ?? -1) - (a.qualityScore ?? -1))
+    .sort((a, b) => (b.qualityScore ?? -1) - (a.qualityScore ?? -1))
     .map((p) => p.id);
   const ordered = heroPhotoId ? [heroPhotoId, ...rest] : rest;
   return ordered.slice(0, k);
@@ -338,6 +340,13 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
         autoKept: autoKeptCount,
         userKept: kept.size,
       });
+      // Quality-score histograms of the four confusion cells (auto-selected vs.
+      // finally kept). Tells us whether qualityScore separates keep from drop,
+      // and where it fails — see lib/curationSignal.js.
+      const autoIds = new Set(chapters.flatMap((c) => c.starter));
+      const universeIds = chapters.flatMap((c) => c.photoIds);
+      track('curation_quality_errors',
+        qualityErrorHistogram(autoIds, kept, universeIds, photoById));
     }
     setShowCelebrate(true);
   };
