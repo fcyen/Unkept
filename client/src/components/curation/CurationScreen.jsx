@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './curation.css';
 import { track } from '../../lib/analytics.js';
+import { qualityErrorHistogram } from '../../lib/curationSignal.js';
 import ChapterRail from './ChapterRail.jsx';
 import MainPhoto from './MainPhoto.jsx';
 import RightStrip from './RightStrip.jsx';
@@ -339,6 +340,13 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
         autoKept: autoKeptCount,
         userKept: kept.size,
       });
+      // Quality-score histograms of the four confusion cells (auto-selected vs.
+      // finally kept). Tells us whether qualityScore separates keep from drop,
+      // and where it fails — see lib/curationSignal.js.
+      const autoIds = new Set(chapters.flatMap((c) => c.starter));
+      const universeIds = chapters.flatMap((c) => c.photoIds);
+      track('curation_quality_errors',
+        qualityErrorHistogram(autoIds, kept, universeIds, photoById));
     }
     setShowCelebrate(true);
   };
