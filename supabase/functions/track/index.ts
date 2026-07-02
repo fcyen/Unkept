@@ -7,7 +7,7 @@
 // client).
 //
 // Deploy:  supabase functions deploy track
-// Secrets: SUPABASE_URL and SUPABASE_SECRET_KEYS JSON are auto-injected.
+// Secrets: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are auto-injected.
 //          TELEMETRY_ALLOWED_ORIGIN is optional and restricts CORS to your site.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -43,27 +43,26 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_REQ = 60;
 const hits = new Map<string, number[]>();
 
-function getEdgeFunctionKey(): string {
-  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
-  if (!raw) {
-    throw new Error("missing auto-injected SUPABASE_SECRET_KEYS JSON secret");
+// Privileged DB key for the insert. Hosted Edge Functions auto-inject
+// SUPABASE_SERVICE_ROLE_KEY; projects on the new API-key system may expose
+// SUPABASE_SECRET_KEY (sb_secret_...) instead. Either bypasses RLS and
+// neither ever reaches the client. Resolved at boot so a misconfigured
+// deploy fails loudly in the function logs, not silently per request.
+function getPrivilegedKey(): string {
+  const key =
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+    Deno.env.get("SUPABASE_SECRET_KEY");
+  if (!key) {
+    throw new Error(
+      "missing SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SECRET_KEY — cannot write events",
+    );
   }
-
-  try {
-    const secrets = JSON.parse(raw) as unknown;
-    const edgeFunctionKey =
-      secrets && typeof secrets === "object"
-        ? (secrets as { edge_function?: unknown }).edge_function
-        : undefined;
-    if (typeof edgeFunctionKey === "string" && edgeFunctionKey.length > 0) {
-      return edgeFunctionKey;
-    }
-  } catch {
-    throw new Error("SUPABASE_SECRET_KEYS must be JSON with an edge_function key");
-  }
-
-  throw new Error("missing edge_function key in auto-injected SUPABASE_SECRET_KEYS JSON");
+  return key;
 }
+
+const supabase = createClient(SUPABASE_URL, getPrivilegedKey(), {
+  auth: { persistSession: false },
+});
 
 function rateLimited(key: string): boolean {
   const now = Date.now();
@@ -177,9 +176,6 @@ Deno.serve(async (req) => {
     return new Response("no valid events", { status: 400, headers: corsHeaders(req) });
   }
 
-  const supabase = createClient(SUPABASE_URL, getEdgeFunctionKey(), {
-    auth: { persistSession: false },
-  });
   const { error } = await supabase.from("events").insert(rows);
   if (error) {
     // Don't leak DB internals to the client; log server-side for debugging.
