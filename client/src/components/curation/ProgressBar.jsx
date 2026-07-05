@@ -1,24 +1,24 @@
-// ProgressBar — three-zone (under / on-target / over) horizontal progress.
-export default function ProgressBar({ kept, target, streak }) {
-  const max = Math.max(target * 1.5, target + 4);
-  const pos = Math.min(1, kept / max);
-  const targetRatio = target / max;
-  const overRatio = (target * 1.15) / max;
+// ProgressBar — fills to a full green bar at the goal, then holds full while
+// the colour drifts yellow → red as the kept set climbs toward 2× the goal.
+export default function ProgressBar({ kept, target }) {
+  // Bar is full once the goal is reached and stays full past it.
+  const fill = target > 0 ? Math.min(1, kept / target) : 0;
+  // 0 at goal, 1 at twice the goal — drives the over-goal green→red drift.
+  const overRatio = target > 0
+    ? Math.min(1, Math.max(0, (kept - target) / target))
+    : 0;
 
-  const zone = kept === 0
-    ? 'empty'
-    : kept < target
-      ? 'under'
-      : kept <= Math.ceil(target * 1.15)
-        ? 'on'
-        : 'over';
-  const thumbColor = zone === 'over'
-    ? 'var(--warm)'
-    : zone === 'on'
-      ? 'var(--good)'
-      : zone === 'under'
-        ? 'var(--cool)'
-        : 'var(--paper-dim)';
+  let barColor;
+  if (kept === 0) {
+    barColor = 'var(--paper-dim)';
+  } else if (kept < target) {
+    // Building toward the goal: cool blue easing into green.
+    const t = kept / target;
+    barColor = `hsl(${200 - t * 80} 55% 56%)`;
+  } else {
+    // At/over the goal: green (120°) → yellow (60°) → red (0°) by 2× goal.
+    barColor = `hsl(${120 - overRatio * 120} 68% 52%)`;
+  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 6 }}>
@@ -30,40 +30,13 @@ export default function ProgressBar({ kept, target, streak }) {
       }}>
         <div style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${targetRatio * 100}%`,
-          background: 'rgba(111,168,199,0.16)',
-          borderRadius: '999px 0 0 999px',
-        }} />
-        <div style={{
-          position: 'absolute', left: `${targetRatio * 100}%`, top: 0, bottom: 0,
-          width: `${(overRatio - targetRatio) * 100}%`,
-          background: 'rgba(184,208,96,0.20)',
-        }} />
-        <div style={{
-          position: 'absolute', left: `${overRatio * 100}%`, top: 0, bottom: 0, right: 0,
-          background: 'rgba(229,165,91,0.16)',
-          borderRadius: '0 999px 999px 0',
-        }} />
-        <div style={{
-          position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${pos * 100}%`,
-          background: thumbColor,
+          width: `${fill * 100}%`,
+          background: barColor,
           borderRadius: 999,
           transition: 'width 320ms cubic-bezier(.3,.7,.4,1), background 320ms ease',
-          boxShadow: `0 0 12px ${thumbColor}`,
-          opacity: 0.85,
+          boxShadow: `0 0 12px ${barColor}`,
+          opacity: 0.9,
         }} />
-        <div style={{
-          position: 'absolute', left: `calc(${targetRatio * 100}% - 0.5px)`,
-          top: -3, bottom: -3, width: 1,
-          background: 'var(--paper-mute)', opacity: 0.55,
-        }} />
-        <div style={{
-          position: 'absolute', left: `calc(${targetRatio * 100}% - 8px)`,
-          top: -14,
-          fontSize: 8, color: 'var(--paper-dim)', letterSpacing: '0.08em',
-          textTransform: 'uppercase', fontFamily: 'Geist Mono, monospace',
-        }}>goal</div>
       </div>
 
       <div className="mono" style={{
@@ -72,23 +45,6 @@ export default function ProgressBar({ kept, target, streak }) {
       }}>
         {kept}<span style={{ color: 'var(--paper-dim)' }}> / {target}</span>
       </div>
-
-      {streak >= 3 && (
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '3px 7px 3px 5px', borderRadius: 999,
-          background: 'rgba(255,106,44,0.14)',
-          border: '0.5px solid rgba(255,106,44,0.45)',
-          color: 'var(--accent-2)',
-          fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-          fontFamily: 'Geist Mono, monospace',
-        }}>
-          <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor">
-            <path d="M4 0 C 5 2 7 3 7 6 A 3 3 0 0 1 1 6 C 1 4 2 4 2 2 C 3 3 3 2 4 0Z" />
-          </svg>
-          {streak}
-        </div>
-      )}
     </div>
   );
 }

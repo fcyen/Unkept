@@ -185,7 +185,6 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
     return s;
   });
   const [touched, setTouched] = useState(() => new Set());
-  const [streak, setStreak] = useState(0);
 
   // Telemetry refs (no re-render): screen mount time for curation_duration,
   // raw keep/remove press count for toggle_count (distinct from touched.size —
@@ -217,7 +216,6 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
       next.add(id);
       return next;
     });
-    setStreak((s) => (on === false ? 0 : s + 1));
   }, []);
 
   const chapter = chapters.find((c) => c.id === chapterId) || firstChapter;
@@ -370,7 +368,7 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
               ? <>{chapter.sub} <em>·</em> {chapter.name}</>
               : chapter.sub}
           </div>
-          <ProgressBar kept={totalKept} target={totalTarget} streak={streak} />
+          <ProgressBar kept={totalKept} target={totalTarget} />
         </div>
         {onBack && (
           <button className="back-btn" onClick={handleBack} type="button">Back</button>
