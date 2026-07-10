@@ -39,9 +39,10 @@ supabase/
 
 3. **(Optional) Set the CORS origin secret**
 
-   `SUPABASE_URL` and the `SUPABASE_SECRET_KEYS` JSON object are auto-injected
-   into every Edge Function by the platform. The Function reads
-   `SUPABASE_SECRET_KEYS.edge_function` from that JSON directly.
+   `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-injected into
+   every Edge Function by the platform — the Function uses those for the
+   insert (falling back to `SUPABASE_SECRET_KEY` on projects using the new
+   API-key system). Nothing key-related needs to be set manually.
 
    The only optional secret locks CORS to one or more exact origins:
    ```
