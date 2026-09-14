@@ -29,7 +29,7 @@ export default function BottomStrip({
   }, [currentChapterId]);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div data-tour="curation-kept" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
         minWidth: 38, flexShrink: 0,

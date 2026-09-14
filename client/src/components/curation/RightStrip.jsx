@@ -28,7 +28,10 @@ export default function RightStrip({ chapterPhotos, currentIdx, keptSet, onPick 
   }, [currentIdx]);
 
   return (
-    <div style={{ width: STRIP_WIDTH, height: '100%', position: 'relative', display: 'flex' }}>
+    <div
+      data-tour="curation-strip"
+      style={{ width: STRIP_WIDTH, height: '100%', position: 'relative', display: 'flex' }}
+    >
       <div style={{ width: 10, position: 'relative', flexShrink: 0 }}>
         <div style={{
           position: 'absolute', top: railTop, left: 0,

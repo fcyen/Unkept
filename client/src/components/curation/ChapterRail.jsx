@@ -1,7 +1,7 @@
 // ChapterRail — horizontal chapter pills with kept counts.
 export default function ChapterRail({ chapters, current, keptByChapter, onPick }) {
   return (
-    <div className="curation-chapters">
+    <div className="curation-chapters" data-tour="curation-chapters">
       {chapters.map((ch) => {
         const kept = keptByChapter[ch.id] || 0;
         const hasAny = kept > 0;

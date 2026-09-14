@@ -1,0 +1,194 @@
+/* Onboarding tour — spotlight coach marks.
+   Two palettes: `paper` for the cream upload page, `dark` for the Darkroom
+   curation screen, so the tour reads as part of whichever screen it is on. */
+
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none; /* children opt back in — the cut-out stays interactive */
+
+  --tour-scrim: rgba(26, 23, 20, 0.55);
+  --tour-surface: #FAF8F5;
+  --tour-border: rgba(181, 176, 168, 0.55);
+  --tour-title: #1a1a1a;
+  --tour-body: #6b6b6b;
+  --tour-dim: #b5b0a8;
+  --tour-accent: #1a1a1a;
+  --tour-on-accent: #FAF8F5;
+  --tour-ring: rgba(250, 248, 245, 0.9);
+  --tour-glow: rgba(250, 248, 245, 0.25);
+  --tour-title-font: "Playfair Display", Georgia, serif;
+  --tour-sans: "Inter", system-ui, sans-serif;
+  --tour-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+}
+
+.tour-root[data-theme='dark'] {
+  --tour-scrim: rgba(12, 10, 9, 0.72);
+  --tour-surface: #221E1A;
+  --tour-border: #4A4138;
+  --tour-title: #F4EFE6;
+  --tour-body: rgba(244, 239, 230, 0.68);
+  --tour-dim: rgba(244, 239, 230, 0.36);
+  --tour-accent: #FF6A2C;
+  --tour-on-accent: #1A1714;
+  --tour-ring: rgba(255, 106, 44, 0.9);
+  --tour-glow: rgba(255, 106, 44, 0.28);
+  --tour-title-font: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
+  --tour-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
+.tour-scrim {
+  position: fixed;
+  background: var(--tour-scrim);
+  pointer-events: auto;
+  animation: tour-scrim-in 260ms ease both;
+  /* Panels resize as the spotlight moves between steps; easing the geometry
+     makes the hole appear to travel rather than jump. */
+  transition: top 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              height 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes tour-scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.tour-ring {
+  position: fixed;
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--tour-ring), 0 0 0 10px var(--tour-glow);
+  transition: top 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              height 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tour-card {
+  position: fixed;
+  width: min(320px, calc(100vw - 24px));
+  box-sizing: border-box;
+  pointer-events: auto;
+  background: var(--tour-surface);
+  border: 1px solid var(--tour-border);
+  border-radius: 14px;
+  padding: 18px 18px 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  font-family: var(--tour-sans);
+  animation: tour-card-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.tour-card:focus { outline: none; }
+.tour-card:focus-visible { outline: 2px solid var(--tour-accent); outline-offset: 3px; }
+
+@keyframes tour-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tour-count {
+  font-family: var(--tour-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--tour-dim);
+  margin-bottom: 8px;
+}
+
+.tour-title {
+  font-family: var(--tour-title-font);
+  font-size: 21px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tour-title);
+  margin: 0 0 8px;
+}
+
+.tour-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tour-body);
+  margin: 0 0 16px;
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tour-dots { display: flex; align-items: center; gap: 5px; }
+.tour-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--tour-dim);
+  opacity: 0.45;
+  transition: opacity 200ms ease, background 200ms ease;
+}
+.tour-dot[data-on='1'] { background: var(--tour-accent); opacity: 1; }
+
+.tour-buttons { display: flex; align-items: center; gap: 6px; }
+
+.tour-btn {
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+.tour-btn.primary {
+  background: var(--tour-accent);
+  color: var(--tour-on-accent);
+  border: 1px solid var(--tour-accent);
+  font-weight: 600;
+}
+.tour-btn.primary:hover { opacity: 0.88; }
+.tour-btn.ghost {
+  background: transparent;
+  color: var(--tour-body);
+  border: 1px solid var(--tour-border);
+}
+.tour-btn.ghost:hover { color: var(--tour-title); }
+
+.tour-skip {
+  display: block;
+  margin: 10px auto 0;
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--tour-dim);
+  cursor: pointer;
+}
+.tour-skip:hover { color: var(--tour-body); }
+
+/* Help / replay affordance shared by both surfaces. */
+.tour-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-scrim,
+  .tour-ring,
+  .tour-card {
+    animation-duration: 1ms;
+    transition-duration: 1ms;
+  }
+}

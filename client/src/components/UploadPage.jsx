@@ -4,6 +4,9 @@ import { buildStory, applyGeocoding } from '../lib/storyBuilder.js';
 import { resolveSkeletonLocations } from '../lib/geocode.js';
 import { track } from '../lib/analytics.js';
 import Survey from './Survey.jsx';
+import Tour from './onboarding/Tour.jsx';
+import useTour from './onboarding/useTour.js';
+import { UPLOAD_TOUR } from './onboarding/tourSteps.js';
 
 // Each pipeline stage cycles through several phrasings while it runs, so
 // the button feels alive instead of stuck on a single sentence.
@@ -75,6 +78,10 @@ export default function UploadPage({ onStoryReady }) {
   const originalsRef = useRef(null);
 
   const pipeline = usePipeline();
+
+  // First-run walkthrough. Held back while the survey/pipeline is running so
+  // coach marks never compete with the survey modal for the user's attention.
+  const tour = useTour('upload', { ready: !surveyOpen });
 
   const processing =
     finalizing ||
@@ -194,6 +201,9 @@ export default function UploadPage({ onStoryReady }) {
     originalsRef.current = new Map(
       photos.map((file, i) => [`photo_${i}`, file]),
     );
+    // The user has committed — the walkthrough has had its chance, and the
+    // survey modal owns the screen from here.
+    if (tour.open) tour.close();
     setSurveyResponses(null);
     setSurveyOpen(true);
     curationStartRef.current = performance.now();
@@ -217,9 +227,19 @@ export default function UploadPage({ onStoryReady }) {
           <p className="font-sans text-muted text-sm tracking-wide">
             Find the photos worth keeping
           </p>
+          {tour.enabled && !tour.open && (
+            <button
+              type="button"
+              onClick={tour.start}
+              className="font-sans text-xs text-faint hover:text-ink tracking-wide underline underline-offset-4 decoration-faint/60 mt-4"
+            >
+              How it works
+            </button>
+          )}
         </div>
 
         <div
+          data-tour="upload-dropzone"
           className="border border-faint/40 rounded-sm text-center cursor-pointer hover:border-ink/30 transition-colors mb-4 overflow-hidden"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handlePhotoDrop}
@@ -298,7 +318,10 @@ export default function UploadPage({ onStoryReady }) {
           hasPhotos={photos.length > 0}
         />
 
-        <p className="font-sans text-xs text-faint tracking-wide text-center mt-4 flex items-center justify-center gap-1.5">
+        <p
+          data-tour="upload-privacy"
+          className="font-sans text-xs text-faint tracking-wide text-center mt-4 flex items-center justify-center gap-1.5"
+        >
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <rect x="5" y="11" width="14" height="9" rx="2" strokeWidth={1.6} />
             <path d="M8 11V8a4 4 0 018 0v3" strokeWidth={1.6} strokeLinecap="round" />
@@ -309,6 +332,15 @@ export default function UploadPage({ onStoryReady }) {
 
       {surveyOpen && (
         <Survey onSubmit={handleSurveyDone} photoCount={photos.length} />
+      )}
+
+      {tour.open && (
+        <Tour
+          steps={UPLOAD_TOUR}
+          surface="upload"
+          theme="paper"
+          onClose={tour.close}
+        />
       )}
     </div>
   );
@@ -340,6 +372,7 @@ function ProgressButton({ processing, pipeline, geocodingProgress, onClick, hasP
 
   return (
     <button
+      data-tour="upload-cta"
       onClick={onClick}
       disabled={processing || !hasPhotos}
       className="w-full py-4 border border-ink bg-ink text-cream font-sans text-sm tracking-widest uppercase hover:bg-ink/90 disabled:bg-faint disabled:border-faint disabled:text-cream/60 transition-colors"

@@ -8,6 +8,9 @@ import RightStrip from './RightStrip.jsx';
 import BottomStrip from './BottomStrip.jsx';
 import ProgressBar from './ProgressBar.jsx';
 import Celebration from './Celebration.jsx';
+import Tour from '../onboarding/Tour.jsx';
+import useTour from '../onboarding/useTour.js';
+import { CURATION_TOUR } from '../onboarding/tourSteps.js';
 
 // Distribute `targetCount` across chapters so the per-chapter picks sum to
 // exactly targetCount (largest-remainder / Hamilton method). Naive per-chapter
@@ -186,6 +189,10 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
   });
   const [touched, setTouched] = useState(() => new Set());
 
+  // First-run walkthrough of the L-shape. Held back until the celebration
+  // overlay is down — coach marks pointing at covered controls help nobody.
+  const tour = useTour('curation', { ready: !showCelebrate, delayMs: 700 });
+
   // Telemetry refs (no re-render): screen mount time for curation_duration,
   // raw keep/remove press count for toggle_count (distinct from touched.size —
   // effort vs. decision breadth), and a guard so a normal finish isn't also
@@ -262,11 +269,13 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
     [kept, photoById],
   );
 
+  // The starter hint and the tour both explain the pre-picked set; let the
+  // tour have the screen, and restart the hint's countdown once it closes.
   useEffect(() => {
-    if (!showStarter) return;
+    if (!showStarter || tour.open) return;
     const t = setTimeout(() => setShowStarter(false), 4500);
     return () => clearTimeout(t);
-  }, [showStarter]);
+  }, [showStarter, tour.open]);
   useEffect(() => {
     if (touched.size > 0) setShowStarter(false);
   }, [touched.size]);
@@ -320,6 +329,8 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
   // the production flow the user may download from there without pressing
   // Continue) — so the completion metrics fire here, not on Continue.
   const onFinish = () => {
+    // The celebration takes the whole screen — nothing left to spotlight.
+    if (tour.open) tour.close();
     // Emit completion metrics once — the user can return via "Keep refining"
     // and Finish again, but that shouldn't double-count.
     if (!completedRef.current) {
@@ -370,8 +381,27 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
           </div>
           <ProgressBar kept={totalKept} target={totalTarget} />
         </div>
+        {tour.enabled && !tour.open && (
+          <button
+            className="back-btn"
+            onClick={tour.start}
+            type="button"
+            aria-label="How this screen works"
+            title="How this screen works"
+            style={{ marginLeft: 'auto', width: 28, padding: 0 }}
+          >
+            ?
+          </button>
+        )}
         {onBack && (
-          <button className="back-btn" onClick={handleBack} type="button">Back</button>
+          <button
+            className="back-btn"
+            onClick={handleBack}
+            type="button"
+            style={tour.enabled && !tour.open ? { marginLeft: 0 } : undefined}
+          >
+            Back
+          </button>
         )}
       </div>
 
@@ -391,7 +421,7 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
             onKeep={onKeep}
             onUnkeep={onUnkeep}
             onDragChange={(d) => setDropHint(d)}
-            showStarterHint={showStarter && photoIdx === 0}
+            showStarterHint={showStarter && photoIdx === 0 && !tour.open}
           />
         </div>
         <div className="right-col">
@@ -425,6 +455,15 @@ export default function CurationScreen({ story, originals, onComplete, onBack })
           canFinish={totalKept > 0}
         />
       </div>
+
+      {tour.open && (
+        <Tour
+          steps={CURATION_TOUR}
+          surface="curation"
+          theme="dark"
+          onClose={tour.close}
+        />
+      )}
 
       {showCelebrate && (
         <Celebration
@@ -498,6 +537,7 @@ function NavRow({ onPrev, onNext, kept, onUnkeep, onFinish, photoIdx, total, can
         </svg>
       </button>
       <button
+        data-tour="curation-finish"
         onClick={onFinish}
         className="curation-finish"
         disabled={!canFinish}
