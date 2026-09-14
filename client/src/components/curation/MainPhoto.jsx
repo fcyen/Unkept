@@ -57,11 +57,14 @@ export default function MainPhoto({
     : { background: photo.grad || 'linear-gradient(150deg,#3d2a20,#6a4530,#b07a4f)' };
 
   return (
-    <div style={{
-      position: 'relative', flex: 1, minHeight: 0,
-      borderRadius: 14, overflow: 'visible',
-      touchAction: 'none',
-    }}>
+    <div
+      data-tour="curation-main"
+      style={{
+        position: 'relative', flex: 1, minHeight: 0,
+        borderRadius: 14, overflow: 'visible',
+        touchAction: 'none',
+      }}
+    >
       <div
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

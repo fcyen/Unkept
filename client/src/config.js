@@ -15,6 +15,12 @@ export const FEATURES = {
   // off, `track()` is a no-op and nothing is sent. Anonymous, non-identifying
   // counts only; see client/src/lib/analytics.js for the privacy guardrails.
   betaTelemetry: import.meta.env.VITE_BETA_TELEMETRY === 'true',
+  // First-run onboarding tour (client/src/components/onboarding/). On — the
+  // upload page and the curation screen each run a short spotlight walkthrough
+  // once per device, and both keep a "How it works" button that replays it.
+  // Flip off to ship the app with no coach marks at all; the help buttons go
+  // with it.
+  onboardingTour: true,
   // Private-beta access code gate (client/src/components/PasswordGate.jsx).
   // Off — the app opens straight to the upload flow. The component stays in
   // the bundle so the gate can be re-enabled with a one-line flip (or wired

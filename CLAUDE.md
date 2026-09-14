@@ -7,6 +7,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 ```
 /  (repo root)
   client/       React + Vite + Tailwind (all active development)
+                components/onboarding/ — first-run spotlight tour (see Key decisions)
   server/       Opt-in backend — none of these services are on the live MVP path:
     index.js, routes/   Express itinerary-matching stub (Phase 3, not in active development),
                         plus routes/aesthetic.js: OpenAI-compatible vision proxy for the
@@ -42,6 +43,7 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Compatibility gate runs before any pipeline code loads
 - Dedup pass 2 uses a 64-bit block-mean hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against the last 5 kept reps in filename order. We tried aHash and dHash first — both produced d=40+ on real bursts because flat regions (sky, wall) in tiny tiles flip pixel-level comparisons under JPEG noise. Block averaging eats that noise.
 - Part 3 (slideshow playback) is gated behind `FEATURES.slideshow` in `client/src/config.js`. Off in the production flow — curation's Celebration screen ends on a download CTA, no slideshow. The renderer still ships in the bundle and `/dev` always exercises it so design iteration continues independent of the flag.
+- Onboarding is a hand-rolled spotlight tour (`client/src/components/onboarding/`), no library. Steps name their anchor with a `data-tour="<id>"` attribute on the real element and the tour reads geometry back off the DOM, so layout changes don't break it and a removed control just drops its step. Four scrim panels surround the cut-out rather than a masked overlay — the spotlit element stays interactive, so the user can try the gesture a step describes. Runs once per surface per device (localStorage, per-surface version in `tourState.js`), and both surfaces keep a replay button ("How it works" on upload, "?" in the curation topbar). Gated behind `FEATURES.onboardingTour`. `__unkept.resetTours()` in a debug build replays the first run.
 - Vision keeper-scoring (`stages/aestheticScore.js`) is gated behind `FEATURES.aestheticScoring`. Off by default — when on, the proxy in `server/routes/aesthetic.js` fronts a swappable OpenAI-compatible vision LLM (dev on Kimi K2.6, demo on GPT-4o-mini — provider swap is a pure env change). Cheap Laplacian variance per cluster gates the expensive model: only the top-3 candidates per cluster reach the LLM. When the proxy is down, `heroSelect` falls back cleanly to its classical heuristic.
 
 ## Dev tooling
