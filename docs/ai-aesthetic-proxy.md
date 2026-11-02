@@ -165,16 +165,65 @@ Clears the score cache (in memory and the persisted file). Returns
         { "model": "moonshot-v1-8k-vision-preview", "score": 0.69, "keep": false, "reason": "slightly soft" }
       ]
     },
-    null
+    {
+      "id": "photo_1",
+      "models": [
+        { "model": "gpt-4o-mini", "score": 0.41, "keep": false, "reason": "motion blur" },
+        { "model": "moonshot-v1-8k-vision-preview", "score": null, "keep": null, "reason": "",
+          "error": { "kind": "rate_limit", "status": 429, "retryAfter": 20, "message": "Provider rate limit (429)" } }
+      ]
+    }
   ]
 }
 ```
 
-Each entry is the per-photo result, with one object per configured model
-(`models[0]` is the primary provider). An entry is `null` only when *every*
-model failed for that photo; if one model errors, just its slot is dropped
-from `models`. The batch never 500s — a model timeout or JSON-parse failure
-yields `null`/a missing model rather than a hard error.
+Each entry is the per-photo result, with one slot per configured model
+(`models[0]` is the primary provider). A failed model keeps its slot with
+`score: null` and an `error` of kind `rate_limit` (HTTP 429) or `failed`
+(timeout, unparseable reply, other provider error). The batch never 500s,
+and errors are never cached. The error carries only a status, a coarse kind
+and a short message, with anything key-shaped redacted, so it is safe to
+render in the UI.
+
+## Rate limits, batching and errors
+
+Kimi rejects bursts above a few concurrent requests with 429. Two guards
+keep a run under that limit:
+
+- **Client batching.** The stage posts candidates in batches of 4, one batch
+  at a time. If a whole batch fails (for example the proxy itself returns
+  429), only those photos are marked with `aestheticError` and the remaining
+  batches still run.
+- **Per-provider concurrency cap.** The proxy queues calls per provider and
+  allows at most `LLM_CONCURRENCY` in flight (default 2).
+
+`/pipeline` turns each outcome into a visible state rather than a silent
+null: a per-card message for a rate-limited or failed model, a stage-level
+warning for partial failures, and an error when every request failed. The
+copy lives in `client/src/dev/pipelineStates.js`.
+
+## Demo mode and the fixture
+
+`DEMO_MODE=true` on the client (`npm run demo`, and every Netlify build)
+makes `/pipeline` replay `client/public/demo/pipeline-fixture.json`. In that
+mode the aesthetic and embedding stages return before any network I/O.
+`DEMO_MODE=true` on the server disables the proxy completely.
+
+To regenerate the fixture from your local score cache:
+
+```bash
+cd client
+npm run demo:fixture -- \
+  --cache ../server/.aesthetic-cache.json \
+  --models gpt-4o-mini,moonshot-v1-8k-vision-preview   # exact names, primary first
+```
+
+The script runs the real pipeline on the sample images in headless
+Chromium. It answers model requests **only from the cache file**, so a miss
+is recorded as `not_cached` and nothing is billed. It also aborts every
+other outbound request. Cache keys include the exact JPEG bytes the browser
+encoded, so build the cache in Chrome or Chromium. Add `--semantic` with the
+CLIP server running to include semantic clusters.
 
 ## Prompt
 

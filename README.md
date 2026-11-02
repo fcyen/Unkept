@@ -1,71 +1,58 @@
 [![Netlify Status](https://api.netlify.com/api/v1/badges/cff4c3b2-815c-4c6f-a61b-be8204981a5e/deploy-status)](https://app.netlify.com/projects/unkept/deploys)
 
-# Unkept
+# Unkept: which vision model picks better keepers?
 
-**Cull messy camera roll down to meaningful collection — runs entirely on browser, no photos leave the device**
+**[Open the demo →](https://unkept.netlify.app/pipeline)**: no sign-up, no API keys, no cost. **[Use the app →](https://unkept.netlify.app)** with your own photos (they never leave the browser).
 
-[**Live demo**](https://unkept.netlify.app)
+Unkept culls a messy camera roll into a short set of keepers. Most of that work runs on-device with classical computer vision: EXIF, perceptual dedup, clustering and sharpness. The one step that needs taste is deciding which near-identical shot is the keeper, so that step goes to a vision LLM. **The open question was which model: a cheap one or a good one?**
 
-<img width="250" height="auto" alt="Unkept Upload Screen" src="https://github.com/user-attachments/assets/4387b919-a7f0-4e99-9f93-2f0128cbd553" />
-<img width="250" height="auto" alt="Unkept Selection Screen" src="https://github.com/user-attachments/assets/b6cca184-c74c-441a-aff2-c265085951b6" />
+<!-- Comparison view. Regenerate after bundling cached scores:
+     cd client && npm run demo:fixture -- --cache ../server/.aesthetic-cache.json --models <A>,<B> && npm run build:demo && npm run demo:screenshots -->
+<!-- ![Two models scoring the same photo side by side](docs/screenshots/comparison.png) -->
+<img src="docs/screenshots/dedup.png" width="640" alt="The /pipeline demo: nine stages, with the dedup stage open showing a burst match" /> <img src="docs/screenshots/pipeline-mobile.png" width="150" alt="The same view on a phone" />
+
+## What the demo shows
+
+`/pipeline` walks through every stage on 21 sample photos: EXIF → dedup → CLIP embedding → clustering → aesthetic scoring → hero → chapters → thumbnail → quality. On the aesthetic stage, **two models score the same photo side by side**, each with a score, a keep/skip call and a one-line reason. You vote for the one you agree with, and a tally adds up your verdict next to the models' own agreement rate and average score gap.
+
+## Key decisions
+
+- **Two models at a time, not a leaderboard.** A head-to-head on the same photo makes the difference concrete ("eyes closed" vs "nice light"), and a human vote settles it. The primary model drives hero selection; the second exists only for comparison. Swapping either one is a change of environment variables, because both go through one OpenAI-compatible proxy.
+- **A cheap filter in front of the expensive model.** A Laplacian sharpness check picks the top 3 photos per cluster; only those reach the LLM. This keeps cost bounded however large the photo roll is.
+- **Caching after hitting Kimi's concurrency limit.** Scores are cached by `sha256(model + prompt + image)`, so a re-run never re-bills a photo, and changing the prompt or model invalidates the cache automatically. Only successful scores are cached.
+- **Batching and a concurrency cap after PR review.** The client sends batches of 4, and the proxy allows at most `LLM_CONCURRENCY` calls in flight per provider. A 429 now shows up as a specific, actionable message on the affected card instead of a silent `null`.
+- **A demo that costs nothing.** `DEMO_MODE` replays a static fixture built from the score cache. In that mode the scoring and embedding stages return before any network call, and the fixture generator answers model requests only from the cache. Votes stay in `localStorage`.
+
+## Where AI helped vs where human judgement was needed
+
+- **AI helped:** scaffolding the proxy, the cache, the tests, and this debug UI. It also did the scoring itself, turning "is this a good photo?" into a number plus a reason a person can disagree with.
+- **Human judgement was needed:**
+  - Deciding which model is *right*. That's what the vote is for.
+  - Noticing when a heuristic is wrong by looking at it. aHash and dHash both failed on real bursts, and only the per-stage view showed why.
+  - Choosing what is worth paying a model for in the first place.
+
+## Next steps
+
+- **A model proxy layer:** routing, fallback and per-request cost tracking, so "cheap vs good" becomes a live policy rather than a config choice.
+- **Prompt A/B tests:** the same model with two prompts, using the same voting UI and the cache key that already includes the prompt.
 
 ---
 
-## What it is
-
-Going through hundreds of photos from a trip is a chore most people abandon. Unkept aims to make the process enjoyable, lets you relive the trip, and ends with a tight set of keepers.
-
-Drop in a few hundred photos. An on-device pipeline picks the strong candidates, groups them into chapters, and hands you a fast review flow where the real work happens — you confirm, swap, and trim the selection chapter by chapter until you have a curated, named set you're proud to share or export.
-
-The defining constraint: **all of the selection intelligence runs locally.** You can disconnect from the internet mid-session and everything still works. No photo, thumbnail, filename, or GPS coordinate is ever uploaded. Server features are opt-in and only ever receive downsized thumbnails.
-
-## How it works
-
-| Stage | What happens |
-|---|---|
-| **1 · Selection** | An offline pipeline does the grunt work: EXIF extraction → deduplication → time-gap clustering → blur/quality scoring → candidate selection → chapter building. Output is a serialisable skeleton with a pre-selected starter set, so the user reacts rather than starts from zero. |
-| **2 · Curation** | The interactive review flow. The user refines the selection per chapter in an "L-shape" layout — a large judgement view, a timestamp-neighbour strip for context, and a kept-set that builds as they go. A running count steers toward the goal; finishing a chapter marks it done. The output is a curated, named set. |
-| **3 · Payoff** | A light celebration of the finished set, ending on an export/download CTA. Download the photos and post them on your favourite social media platform. |
-
-<!-- Optional: a screenshot or two of the L-shape review. -->
-<!-- ![Curation](docs/screenshots/curation.png) -->
-
-## Engineering notes
-
-A few parts worth a closer look:
-
-- **A pipeline of pure functions.** Each stage is `(input, options, onProgress) => output` with no side effects, registered through a strategy table so algorithms can be swapped and compared. Heavy work runs in Web Workers. There's a `/pipeline` debug route that renders per-stage snapshots — invaluable when tuning perceptual stages.
-
-- **Heuristics before ML, on purpose.** The selection algorithm starts deliberately simple — classical CV and heuristics (Laplacian-variance blur scoring, EXIF time-gap clustering, middle-of-cluster hero selection) — with ML scoring (aesthetic quality, face presence, CLIP semantic clustering) layered in incrementally. Implementing the simple version first makes the contribution of each ML step measurable rather than assumed.
-
-- **Perceptual dedup that survives real bursts.** Duplicate detection runs two passes: an exact hash, then a 64-bit **block-mean** perceptual hash (32×32 → 8×8 grid of 4×4 means → bit = mean > median), windowed against recent kept frames. aHash and dHash were tried first and both failed — flat regions like sky or wall flip pixel-level comparisons under JPEG noise, producing Hamming distances of 40+ on genuine bursts. Block averaging eats that noise. The `/pipeline` view shows the exact 8×8 tile the hash sees, side-by-side with the original.
-
-- **Memory discipline.** Blob URLs are revoked as early as possible; no decoded image data is meant to survive past chapter building. Original `File` handles are retained only for the kept set, only for export.
-
-## Tech stack
-
-- **Frontend:** React 18, Vite, Tailwind CSS
-- **On-device processing:** Web Workers, [`exifr`](https://github.com/MikeKovarik/exifr) for EXIF, Transformers.js (for the planned in-browser ML models)
-- **Geocoding:** Nominatim (the one network call, Stage 3 only)
-- **Opt-in server:** Express (itinerary matching) and a FastAPI CLIP embedding server — local dev tooling, off the live path
-- **Hosting:** static deploy on Netlify; PWA manifest in place, service worker deferred until the first ML model ships
-
-## Running locally
+<details>
+<summary><b>Run it locally</b></summary>
 
 ```bash
-cd client
-npm install
-npm run dev
+# Demo: precomputed results, no keys, no server
+cd client && npm install && npm run demo      # → http://localhost:5173/pipeline
+
+# Live pipeline against real models (needs keys; see docs/ai-aesthetic-proxy.md)
+cp server/.env.example server/.env            # fill LLM_* (and LLM_*_2 for a comparison)
+cd server && npm install && npm run dev
+cd client && npm run dev:debug                # → http://localhost:5173/pipeline
+
+# Tests
+cd client && npm test && cd ../server && npm test
 ```
 
-
-```bash
-npm test          # vitest
-npm run build     # production build
-```
-
-## Deeper reading
-
-- [`EXECUTIVE-SUMMARY.md`](EXECUTIVE-SUMMARY.md) — product vision, the five-phase flow, and the selection-algorithm roadmap
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design
-- [`IMPLEMENTATION-PLAN-2.md`](IMPLEMENTATION-PLAN-2.md) — current plan of record
+Deploys on Netlify from `netlify.toml` (static build, `DEMO_MODE=true`). Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md) · proxy, caching and fixture: [`docs/ai-aesthetic-proxy.md`](docs/ai-aesthetic-proxy.md).
+</details>
