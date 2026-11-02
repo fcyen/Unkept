@@ -8,7 +8,11 @@
     "build": "vite build",
     "build:debug": "sh -c 'SAMPLE_IMAGES_DIR=\"$1\" vite build --mode debug' --",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo": "DEMO_MODE=true vite",
+    "build:demo": "DEMO_MODE=true vite build",
+    "demo:fixture": "node scripts/build-demo-fixture.mjs",
+    "demo:screenshots": "node scripts/capture-screenshots.mjs"
   },
   "dependencies": {
     "exifr": "^7.1.3",

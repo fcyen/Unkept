@@ -8,6 +8,7 @@ import { checkCompatibility } from './lib/compatibility.js';
 import { buildStory, applyGeocoding } from './lib/storyBuilder.js';
 import { track } from './lib/analytics.js';
 import { FEATURES } from './config.js';
+import { DEMO_MODE } from './lib/demoMode.js';
 
 // Debug routes are lazy-imported and only resolved when MODE === 'debug'.
 // Vite replaces import.meta.env.MODE with a literal string at build time,
@@ -16,15 +17,20 @@ import { FEATURES } from './config.js';
 const DevRoute = import.meta.env.MODE === 'debug'
   ? lazy(() => import('./dev/DevRoute.jsx'))
   : null;
-const PipelineDebugRoute = import.meta.env.MODE === 'debug'
+// DEMO_MODE (public portfolio build) also mounts /pipeline, backed by the
+// precomputed fixture instead of a live run. `/` stays the real app.
+// `__DEMO_MODE__` is the raw build-time literal (vite.config.js `define`) so
+// Rollup can drop this chunk from ordinary production builds.
+// eslint-disable-next-line no-undef
+const PipelineDebugRoute = (import.meta.env.MODE === 'debug' || __DEMO_MODE__)
   ? lazy(() => import('./dev/PipelineDebugRoute.jsx'))
   : null;
 
 const isDebugMode = import.meta.env.MODE === 'debug';
-const isDevRoute      = isDebugMode && window.location.pathname === '/dev';
-const isPipelineRoute = isDebugMode && (
-  window.location.pathname === '/pipeline' || window.location.pathname === '/'
-);
+const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+const isDevRoute      = isDebugMode && pathname === '/dev';
+const isPipelineRoute = (isDebugMode && (pathname === '/pipeline' || pathname === '/'))
+  || (DEMO_MODE && pathname === '/pipeline');
 
 // Run once at module load — gate the app before any pipeline code runs.
 const compatibility = checkCompatibility();

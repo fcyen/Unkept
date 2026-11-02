@@ -30,6 +30,7 @@
  */
 
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
+import { DEMO_MODE } from '../../demoMode.js';
 
 const AESTHETIC_SERVER = 'http://localhost:3001';
 // Send 512px JPEGs — small enough to keep request bodies reasonable and
@@ -104,19 +105,62 @@ async function laplacianVariance(file) {
   }
 }
 
+// Photos per POST. Small batches keep request bodies well under the proxy's
+// body limit and give the provider a steady trickle instead of one burst;
+// the proxy additionally caps in-flight calls per provider.
+const BATCH_SIZE = 4;
+
+/** Error thrown for a non-2xx proxy response, carrying the HTTP status. */
+class ProxyError extends Error {
+  constructor(status) {
+    super(`Aesthetic proxy error: ${status}`);
+    this.status = status;
+  }
+}
+
 async function postScores(items, serverUrl) {
   const response = await fetch(`${serverUrl}/api/aesthetic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ photos: items }),
   });
-  if (!response.ok) throw new Error(`Aesthetic proxy error: ${response.status}`);
+  if (!response.ok) throw new ProxyError(response.status);
   const { scores } = await response.json();
   const map = new Map();
   for (const s of scores ?? []) {
     if (s && s.id) map.set(s.id, s);
   }
   return map;
+}
+
+/** Turn a thrown batch error into the same `{ kind, status, message }` shape the proxy uses. */
+export function errorFromBatchFailure(err) {
+  const status = typeof err?.status === 'number' ? err.status : null;
+  if (status === 429) return { kind: 'rate_limit', status, message: 'Provider rate limit (429)' };
+  return { kind: 'failed', status, message: err?.message ?? 'Request failed' };
+}
+
+/**
+ * Normalise one proxy result into `{ models, primary, error }`.
+ * Accepts the multi-model shape `{ id, models: [...] }` and the legacy flat
+ * shape `{ id, score, keep, reason }`. models[0] is the primary provider.
+ */
+export function normaliseResult(s) {
+  const models = Array.isArray(s.models)
+    ? s.models.filter(Boolean).map((m) => ({
+      model: m.model ?? null,
+      score: m.score ?? null,
+      keep: m.keep ?? null,
+      reason: m.reason ?? '',
+      ...(m.cached ? { cached: true } : {}),
+      ...(m.error ? { error: m.error } : {}),
+    }))
+    : [{ model: s.model ?? null, score: s.score ?? null, keep: s.keep ?? null, reason: s.reason ?? '' }];
+  const primary = models[0] ?? null;
+  // Photo-level error only when no model produced a score at all.
+  const allFailed = models.length > 0 && models.every((m) => m.score == null);
+  const error = allFailed ? (models.find((m) => m.error)?.error ?? { kind: 'failed', message: 'No score returned' }) : null;
+  return { models, primary, error };
 }
 
 function attachNullScores(clusters) {
@@ -126,24 +170,44 @@ function attachNullScores(clusters) {
       photo.aestheticKeep = null;
       photo.aestheticReason = null;
       photo.aestheticModels = null;
+      photo.aestheticError = null;
+      photo.aestheticCandidate = false;
     }
   }
 }
 
 /**
+ * Stage-level outcome, attached to the output as `aestheticStatus` so the
+ * debug view can render a specific empty/error state:
+ *   'ok'            proxy answered (individual photos may still carry errors)
+ *   'demo'          DEMO_MODE — stage intentionally made no network calls
+ *   'unconfigured'  proxy is up but has no provider keys (HTTP 503)
+ *   'unreachable'   proxy did not answer the health probe
+ *   'empty'         nothing to score
+ *
  * @param {{ clusters: PhotoData[][], burstGroups?: BurstGroup[], burstCandidates?: PhotoData[] }} input
- * @param {{ serverUrl?: string, topNPerCluster?: number }} options
+ * @param {{ serverUrl?: string, topNPerCluster?: number, batchSize?: number, demoMode?: boolean }} options
  * @param {(done: number, total: number) => void} onProgress
  */
 export async function aestheticScoreStage(input, options = {}, onProgress) {
   const clusters = input.clusters ?? [];
   const serverUrl = options.serverUrl ?? AESTHETIC_SERVER;
   const topN = options.topNPerCluster ?? TOP_N_PER_CLUSTER;
+  const batchSize = Math.max(1, options.batchSize ?? BATCH_SIZE);
+  const demoMode = options.demoMode ?? DEMO_MODE;
 
   // Default every photo to null so heroSelect's fallback path stays clean.
   attachNullScores(clusters);
 
+  // Demo mode: hard stop before any network I/O. No probe, no POST.
+  if (demoMode) {
+    input.aestheticStatus = 'demo';
+    if (onProgress) onProgress(1, 1);
+    return input;
+  }
+
   if (clusters.length === 0) {
+    input.aestheticStatus = 'empty';
     if (onProgress) onProgress(0, 0);
     return input;
   }
@@ -153,15 +217,20 @@ export async function aestheticScoreStage(input, options = {}, onProgress) {
     const probe = await fetch(`${serverUrl}/api/aesthetic/health`, {
       signal: AbortSignal.timeout(2000),
     });
-    if (!probe.ok) throw new Error('unhealthy');
+    if (!probe.ok) {
+      input.aestheticStatus = probe.status === 503 ? 'unconfigured' : 'unreachable';
+      throw new Error('unhealthy');
+    }
   } catch {
+    input.aestheticStatus = input.aestheticStatus ?? 'unreachable';
     console.warn(
-      '[aestheticScore] proxy unreachable at', serverUrl,
+      '[aestheticScore] proxy', input.aestheticStatus, 'at', serverUrl,
       '— skipping vision scoring. Heroes will fall back to the classical heuristic.',
     );
     if (onProgress) onProgress(1, 1);
     return input;
   }
+  input.aestheticStatus = 'ok';
 
   // Per-cluster pre-filter: rank by cheap Laplacian variance, keep top-N.
   // Clusters of size ≤ topN are sent whole.
@@ -182,6 +251,7 @@ export async function aestheticScoreStage(input, options = {}, onProgress) {
       .slice(0, topN);
     for (const { photo } of ranked) candidates.push(photo);
   }
+  for (const p of candidates) p.aestheticCandidate = true;
 
   const total = candidates.length;
   if (total === 0) {
@@ -207,33 +277,46 @@ export async function aestheticScoreStage(input, options = {}, onProgress) {
     },
   );
 
-  const items = candidates
-    .map((p, i) => (dataUrls[i] ? { id: p.id, data: dataUrls[i] } : null))
-    .filter(Boolean);
+  const items = [];
+  candidates.forEach((p, i) => {
+    if (dataUrls[i]) items.push({ id: p.id, data: dataUrls[i] });
+    else p.aestheticError = { kind: 'failed', status: null, message: 'Could not decode this photo' };
+  });
 
-  let scoreMap = new Map();
-  if (items.length > 0) {
+  // Batches go out sequentially; a failed batch (e.g. 429) marks only its own
+  // photos and the rest still get scored.
+  const scoreMap = new Map();
+  const batchErrors = new Map();
+  let sent = 0;
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
     try {
-      scoreMap = await postScores(items, serverUrl);
+      const m = await postScores(batch, serverUrl);
+      for (const [id, s] of m) scoreMap.set(id, s);
     } catch (err) {
       console.warn('[aestheticScore] batch failed:', err.message);
+      const e = errorFromBatchFailure(err);
+      for (const it of batch) batchErrors.set(it.id, e);
     }
+    sent += batch.length;
+    if (onProgress) onProgress(Math.round(total * 0.5 + sent * 0.5), total);
   }
 
   for (const photo of candidates) {
     const s = scoreMap.get(photo.id);
-    if (!s) continue;
-    // New multi-model shape: { id, models: [{ model, score, keep, reason }] }.
-    // Legacy flat shape: { id, score, keep, reason }. Normalise to a list so
-    // the comparison view has a uniform structure, with models[0] primary.
-    const models = Array.isArray(s.models)
-      ? s.models
-      : [{ model: s.model ?? null, score: s.score ?? null, keep: s.keep ?? null, reason: s.reason ?? '' }];
-    const primary = models[0] ?? null;
+    if (!s) {
+      if (!photo.aestheticError) {
+        photo.aestheticError = batchErrors.get(photo.id)
+          ?? { kind: 'failed', status: null, message: 'No score returned for this photo' };
+      }
+      continue;
+    }
+    const { models, primary, error } = normaliseResult(s);
     photo.aestheticModels = models;
     photo.aestheticScore = primary?.score ?? null;
     photo.aestheticKeep = primary?.keep ?? null;
     photo.aestheticReason = primary?.reason ?? '';
+    photo.aestheticError = error;
   }
 
   if (onProgress) onProgress(total, total);

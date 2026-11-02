@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import os from 'os';
@@ -91,9 +91,40 @@ function sampleImagesPlugin() {
   };
 }
 
-export default defineConfig(({ mode }) => ({
-  plugins: [
-    react(),
-    ...(mode === 'debug' ? [sampleImagesPlugin()] : []),
-  ],
-}));
+/**
+ * Keep the full-resolution sample photos out of every non-debug build.
+ * They live in public/ for the /pipeline debug loop, but they carry original
+ * EXIF (including exact GPS) and ~50 MB. The public demo only needs the
+ * fixture's 320px thumbnails, so nothing references them in production.
+ */
+function excludeSampleImagesPlugin() {
+  let outDir;
+  return {
+    name: 'exclude-sample-images',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      fs.rmSync(path.join(outDir, 'sample-images'), { recursive: true, force: true });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  // DEMO_MODE (or VITE_DEMO_MODE) from the shell or a .env file. The public
+  // Netlify build sets DEMO_MODE=true in netlify.toml. See src/lib/demoMode.js.
+  const env = loadEnv(mode, process.cwd(), '');
+  const demoMode = env.DEMO_MODE === 'true' || env.VITE_DEMO_MODE === 'true';
+  return {
+    define: { __DEMO_MODE__: JSON.stringify(demoMode) },
+    plugins: [
+      react(),
+      // The /pipeline route imports `virtual:sample-images`; it must resolve in
+      // debug builds (real samples) and in demo builds (route is mounted there
+      // too). Outside debug mode it serves the default public/ folder list.
+      ...(mode === 'debug' || demoMode ? [sampleImagesPlugin()] : []),
+      ...(mode === 'debug' ? [] : [excludeSampleImagesPlugin()]),
+    ],
+  };
+});
