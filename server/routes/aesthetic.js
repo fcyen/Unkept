@@ -2,12 +2,20 @@
  * Vision aesthetic/keeper scoring proxy.
  *
  * POST /api/aesthetic  { photos: [{ id, data }, ...] }
- *   → { scores: [{ id, models: [{ model, score, keep, reason }, ...] } | null, ...] }
+ *   → { scores: [{ id, models: [{ model, score, keep, reason, error? }, ...] } | null, ...] }
  *
  * Each photo is scored against every configured provider in parallel, so the
  * `/pipeline` debug view can show a side-by-side comparison of two vision
- * models. A per-provider failure drops only that model's slot — the photo
- * still returns the models that succeeded.
+ * models. A per-provider failure is reported in that model's slot as
+ * `error: { kind: 'rate_limit' | 'failed', status, message }` so the UI can
+ * say *why* a score is missing instead of showing a silent null.
+ *
+ * Concurrency: each provider gets its own cap (LLM_CONCURRENCY, default 2).
+ * Kimi rejects bursts above a handful of parallel requests with 429; the cap
+ * queues the overflow instead of firing every photo at once.
+ *
+ * DEMO_MODE=true hard-disables the proxy: no provider client is created and
+ * no request leaves the server, even if keys are present in the env.
  *
  * Provider-agnostic OpenAI-compatible clients. Provider A keeps the original
  * env vars (backward compatible); provider B is optional:
@@ -35,10 +43,10 @@
  * `server/.aesthetic-cache.json` (gitignored) so it survives restarts.
  */
 import { Router } from 'express';
-import { createHash } from 'node:crypto';
 import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { PROMPT, cacheKey, classifyProviderError, createLimiter } from '../lib/aestheticCache.js';
 
 const router = Router();
 
@@ -48,13 +56,6 @@ const PROVIDER_ENVS = [
   { base: 'LLM_BASE_URL',   key: 'LLM_API_KEY',   model: 'LLM_MODEL' },
   { base: 'LLM_BASE_URL_2', key: 'LLM_API_KEY_2', model: 'LLM_MODEL_2' },
 ];
-
-const PROMPT = `Score a single photo for keep-worthiness in a personal year-in-review slideshow.
-Consider: subject clarity, expressions (eyes open, faces visible), composition, lighting.
-Penalize: motion blur, closed eyes, awkward crops, busy backgrounds.
-
-Respond with ONLY strict JSON, no prose or fences:
-{"score": <0..1>, "keep": <true|false>, "reason": <string, <=12 words>}`;
 
 // ── Content-addressed score cache ────────────────────────────────────────────
 // Keyed by sha256(model + prompt + image data). Including the model and prompt
@@ -94,21 +95,20 @@ function scheduleSave() {
   if (saveTimer.unref) saveTimer.unref();
 }
 
-function cacheKey(model, data) {
-  return createHash('sha256')
-    .update(model).update('\0')
-    .update(PROMPT).update('\0')
-    .update(data)
-    .digest('hex');
-}
-
 // undefined = not initialised; otherwise an array (possibly empty) of
 // { client, model } in priority order — index 0 is the primary provider.
 let providers;
 
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+const CONCURRENCY = Number(process.env.LLM_CONCURRENCY) || 2;
+
 async function getProviders() {
   if (providers !== undefined) return providers;
   providers = [];
+  if (DEMO_MODE) {
+    console.log('[aesthetic] DEMO_MODE=true — proxy disabled, no provider calls will be made.');
+    return providers;
+  }
   let OpenAI;
   for (const env of PROVIDER_ENVS) {
     const baseURL = process.env[env.base];
@@ -124,7 +124,11 @@ async function getProviders() {
         return providers;
       }
     }
-    providers.push({ client: new OpenAI({ baseURL, apiKey }), model: modelName });
+    providers.push({
+      client: new OpenAI({ baseURL, apiKey }),
+      model: modelName,
+      limit: createLimiter(CONCURRENCY),
+    });
   }
   if (providers.length === 0) {
     console.warn('[aesthetic] no provider configured (LLM_BASE_URL / LLM_API_KEY / LLM_MODEL) — proxy disabled.');
@@ -155,7 +159,7 @@ async function scoreWithProvider(provider, item) {
   if (hit) return { model: provider.model, ...hit, cached: true };
 
   try {
-    const response = await provider.client.chat.completions.create({
+    const response = await provider.limit(() => provider.client.chat.completions.create({
       model: provider.model,
       max_tokens: 80,
       temperature: 0,
@@ -168,21 +172,28 @@ async function scoreWithProvider(provider, item) {
           ],
         },
       ],
-    });
+    }));
     const parsed = parseScore(response.choices?.[0]?.message?.content);
-    if (!parsed) return null;
+    if (!parsed) {
+      return { model: provider.model, score: null, keep: null, reason: '',
+        error: { kind: 'failed', status: null, message: 'Unparseable model reply' } };
+    }
     cache.set(key, parsed);
     scheduleSave();
     return { model: provider.model, ...parsed };
   } catch (err) {
-    console.warn('[aesthetic] score failed for', item.id, 'on', provider.model, '-', err.message);
-    return null;
+    const error = classifyProviderError(err);
+    console.warn('[aesthetic] score failed for', item.id, 'on', provider.model, '-', error.kind, error.status ?? '', error.message);
+    // Errors are never cached — a re-run retries them.
+    return { model: provider.model, score: null, keep: null, reason: '', error };
   }
 }
 
 router.get('/health', async (_req, res) => {
   const provs = await getProviders();
-  if (provs.length === 0) return res.status(503).json({ status: 'unconfigured', models: [] });
+  if (provs.length === 0) {
+    return res.status(503).json({ status: DEMO_MODE ? 'demo' : 'unconfigured', models: [] });
+  }
   await loadCache();
   res.json({ status: 'ok', models: provs.map((p) => p.model), cached: cache.size });
 });
@@ -208,7 +219,7 @@ router.delete('/cache', async (_req, res) => {
 router.post('/', async (req, res) => {
   const provs = await getProviders();
   if (provs.length === 0) {
-    return res.status(503).json({ error: 'aesthetic proxy unconfigured' });
+    return res.status(503).json({ error: DEMO_MODE ? 'aesthetic proxy disabled in demo mode' : 'aesthetic proxy unconfigured' });
   }
   await loadCache();
   const { photos } = req.body ?? {};
@@ -218,11 +229,9 @@ router.post('/', async (req, res) => {
   const scores = await Promise.all(
     photos.map(async (item) => {
       const results = await Promise.all(provs.map((p) => scoreWithProvider(p, item)));
-      const models = results.filter(Boolean);
-      // Drop the photo entirely only if every provider failed; otherwise
-      // return whichever models succeeded so the comparison can still render.
-      if (models.length === 0) return null;
-      return { id: item.id, models };
+      // Every slot is present — failed ones carry an `error` — so the UI can
+      // explain a missing score rather than silently dropping the model.
+      return { id: item.id, models: results };
     }),
   );
   res.json({ scores });
