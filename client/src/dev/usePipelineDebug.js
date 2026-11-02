@@ -23,7 +23,10 @@ export function usePipelineDebug() {
   const [progress, setProgress] = useState(null);
   const [snapshots, setSnapshots] = useState({});
   const [error, setError] = useState(null);
-  const [useSemanticClustering, setUseSemanticClustering] = useState(false);
+  // `?semantic=1` starts with semantic clustering on (used by the fixture generator).
+  const [useSemanticClustering, setUseSemanticClustering] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('semantic') === '1'; } catch { return false; }
+  });
 
   // Object URLs created from File refs right after exif; revoked once thumbnails arrive.
   const previewUrlsRef = useRef(new Map());
@@ -94,8 +97,15 @@ export function usePipelineDebug() {
         onStageStart,
         onStageComplete,
         useSemanticClustering,
+        // The inspector always runs the vision stage: with no proxy it
+        // degrades to an explained empty state, never a crash.
+        useAestheticScoring: true,
       });
+      // Exposed for scripts/build-demo-fixture.mjs, which drives this route
+      // in headless Chromium and serialises the snapshots into the fixture.
+      if (typeof window !== 'undefined') window.__pipelineSnapshots = capturedRef.current;
     } catch (err) {
+      if (typeof window !== 'undefined') window.__pipelineError = String(err?.message ?? err);
       setError(err);
       setPhase(PHASES.ERROR);
     }
@@ -200,16 +210,27 @@ function extractSnapshot(name, output) {
       const modelLabels = [];
       let scoredCount = 0;
       let skippedCount = 0;
+      let candidateCount = 0;
+      let rateLimitedCount = 0;
+      let failedCount = 0;
+      let modelErrorCount = 0;
       for (const cluster of clusters) {
         for (const p of cluster) {
           const hasScore = p.aestheticScore != null;
           const models = p.aestheticModels ?? null;
+          const err = p.aestheticError ?? null;
           perPhoto[p.id] = {
             score: p.aestheticScore ?? null,
             keep: p.aestheticKeep ?? null,
             reason: p.aestheticReason ?? null,
             models,
+            candidate: !!p.aestheticCandidate,
+            error: err,
           };
+          if (p.aestheticCandidate) candidateCount++;
+          if (err?.kind === 'rate_limit') rateLimitedCount++;
+          else if (err && err.kind !== 'not_cached') failedCount++;
+          if (models) modelErrorCount += models.filter((m) => m?.error).length;
           // Collect the distinct model labels (in first-seen order) so the
           // comparison panel can show stable column headers.
           if (models) {
@@ -230,8 +251,13 @@ function extractSnapshot(name, output) {
         ? Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 1000) / 1000
         : null;
       return {
+        status: output.aestheticStatus ?? (scoredCount > 0 ? 'ok' : 'unreachable'),
         scoredCount,
         skippedCount,
+        candidateCount,
+        rateLimitedCount,
+        failedCount,
+        modelErrorCount,
         avgScore: avg,
         minScore: scores.length ? scores[0] : null,
         maxScore: scores.length ? scores[scores.length - 1] : null,
