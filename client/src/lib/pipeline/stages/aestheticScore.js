@@ -6,7 +6,13 @@
  *     => { clusters, burstGroups, burstCandidates }
  *
  * Runs after cluster, before heroSelect. Attaches `aestheticScore`,
- * `aestheticKeep`, and `aestheticReason` to each photo in each cluster.
+ * `aestheticKeep`, and `aestheticReason` to each photo in each cluster —
+ * these reflect the PRIMARY provider and are what heroSelect consumes.
+ *
+ * When the proxy has a second provider configured, each photo also gets
+ * `aestheticModels: [{ model, score, keep, reason }, ...]` holding every
+ * model's result. The `/pipeline` view renders these side by side; the
+ * pipeline itself still acts on the primary model only.
  *
  * Cost pre-filter: per cluster, rank by a cheap on-the-fly Laplacian
  * variance and send only the top-N candidates (N=3) to the proxy. The
@@ -119,6 +125,7 @@ function attachNullScores(clusters) {
       photo.aestheticScore = null;
       photo.aestheticKeep = null;
       photo.aestheticReason = null;
+      photo.aestheticModels = null;
     }
   }
 }
@@ -216,9 +223,17 @@ export async function aestheticScoreStage(input, options = {}, onProgress) {
   for (const photo of candidates) {
     const s = scoreMap.get(photo.id);
     if (!s) continue;
-    photo.aestheticScore = s.score ?? null;
-    photo.aestheticKeep = s.keep ?? null;
-    photo.aestheticReason = s.reason ?? '';
+    // New multi-model shape: { id, models: [{ model, score, keep, reason }] }.
+    // Legacy flat shape: { id, score, keep, reason }. Normalise to a list so
+    // the comparison view has a uniform structure, with models[0] primary.
+    const models = Array.isArray(s.models)
+      ? s.models
+      : [{ model: s.model ?? null, score: s.score ?? null, keep: s.keep ?? null, reason: s.reason ?? '' }];
+    const primary = models[0] ?? null;
+    photo.aestheticModels = models;
+    photo.aestheticScore = primary?.score ?? null;
+    photo.aestheticKeep = primary?.keep ?? null;
+    photo.aestheticReason = primary?.reason ?? '';
   }
 
   if (onProgress) onProgress(total, total);

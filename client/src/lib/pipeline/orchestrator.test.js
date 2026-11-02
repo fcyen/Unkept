@@ -39,6 +39,9 @@ describe('runPhase1', () => {
 
     const skeleton = await runPhase1([{}], {
       onPhase: (p) => phases.push(p),
+      // Optional vision stage is off for these core-ordering tests — they stub
+      // the classical stages and shouldn't depend on the feature flag default.
+      useAestheticScoring: false,
       stages: {
         exif: trace('exif', [photo]),
         dedup: trace('dedup', { photos: [photo], burstGroups: [], burstCandidates: [] }),
@@ -97,6 +100,7 @@ describe('runPhase1', () => {
 
     await runPhase1([{}], {
       onProgress: (e) => events.push(e),
+      useAestheticScoring: false,
       stages: {
         exif: async (_, __, onProgress) => { onProgress(1, 1); return [photo]; },
         dedup: async (_, __, onProgress) => {
@@ -140,6 +144,7 @@ describe('runPhase1', () => {
     await runPhase1([{}], {
       onStageStart: (stage) => log.push(`start:${stage}`),
       onStageComplete: (stage) => log.push(`complete:${stage}`),
+      useAestheticScoring: false,
       stages: {
         exif: async () => [photo],
         dedup: async () => ({ photos: [photo], burstGroups: [], burstCandidates: [] }),
