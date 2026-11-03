@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PHASES } from '../lib/pipeline/orchestrator.js';
 import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
 import { usePipelineDemo } from './usePipelineDemo.js';
 import { stageViewState, modelErrorCopy, compareModels } from './pipelineStates.js';
 import { loadVotes, saveVotes, storageKey, toggleVote, tally } from './voteStore.js';
 import { DEMO_MODE, DEMO_FIXTURE_URL } from '../lib/demoMode.js';
+import { buildDemoFixture, buildDisplayImages } from './demoFixture.js';
 import sampleImageUrls, { sampleImagesDir } from 'virtual:sample-images';
 
 // The aesthetic proxy (same host the aestheticScore stage posts to). Only
@@ -78,6 +79,23 @@ function LiveInspector() {
     setVotes({});
   };
 
+  // Build the DEMO_MODE fixture from this run. Exposed on window so
+  // scripts/build-demo-fixture.mjs drives the exact same code path.
+  const exportFixture = useCallback(async (generator = 'browser export') => {
+    // The finished run's snapshots (set when runPhase1 resolves) — never a
+    // mid-render copy of React state.
+    const snaps = window.__pipelineSnapshots ?? snapshots;
+    return buildDemoFixture({
+      snapshots: snaps,
+      images: await buildDisplayImages(sampleImageUrls, snaps),
+      generator,
+    });
+  }, [snapshots]);
+  useEffect(() => {
+    window.__exportDemoFixture = exportFixture;
+    return () => { delete window.__exportDemoFixture; };
+  }, [exportFixture]);
+
   return (
     <InspectorView
       mode="live"
@@ -111,6 +129,9 @@ function LiveInspector() {
               />
             </button>
           </label>
+          {phase === PHASES.DONE && sampleImageUrls.length > 0 && (
+            <ExportFixtureButton exportFixture={exportFixture} />
+          )}
           {phase !== PHASES.IDLE && (
             <button className="text-sm text-muted underline underline-offset-2 hover:text-ink" onClick={handleNewRun}>
               New run
@@ -120,6 +141,48 @@ function LiveInspector() {
       )}
       extraAesthetic={<CacheControl />}
     />
+  );
+}
+
+// Downloads pipeline-fixture.json built from this run, and reports how many
+// model scores came from the cache so a zero-hit export is obvious.
+function ExportFixtureButton({ exportFixture }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const fixture = await exportFixture();
+      const blob = new Blob([JSON.stringify(fixture)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pipeline-fixture.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setResult({ ok: true, ...fixture.meta.source });
+    } catch (err) {
+      setResult({ ok: false, message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="flex items-center gap-2 text-sm">
+      <button onClick={run} disabled={busy} className="text-muted underline underline-offset-2 hover:text-ink disabled:opacity-40">
+        {busy ? 'Exporting…' : 'Export demo fixture'}
+      </button>
+      {result && (
+        <span className={`text-xs font-mono ${result.ok && result.cacheHits > 0 ? 'text-green-700' : 'text-red-700'}`}>
+          {result.ok
+            ? `${result.cacheHits} hits · ${result.cacheMisses} misses${result.cacheHits ? ' → save to client/public/demo/' : ' — models not bundled'}`
+            : `failed: ${result.message}`}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -628,7 +691,7 @@ function VoteTally({ snapshots, votes, onReset, persistNote }) {
   return (
     <section aria-label="Model vote tally" className="rounded-lg border border-faint bg-white px-4 py-3.5">
       <div className="flex items-baseline justify-between gap-3 mb-3">
-        <h2 className="text-[11px] text-muted uppercase tracking-[0.12em]">Your verdict</h2>
+        <h2 className="text-[11px] text-muted uppercase tracking-[0.12em] shrink-0">Your verdict</h2>
         <p className="text-xs text-muted font-mono flex items-center gap-2">
           <span>{total} vote{total !== 1 ? 's' : ''} · {persistNote}</span>
           {total > 0 && onReset && (

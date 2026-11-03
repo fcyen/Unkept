@@ -7,7 +7,8 @@
 Unkept culls a messy camera roll into a short set of keepers. Most of that work runs on-device with classical computer vision: EXIF, perceptual dedup, clustering and sharpness. The one step that needs taste is deciding which near-identical shot is the keeper, so that step goes to a vision LLM. **The open question was which model: a cheap one or a good one?**
 
 <!-- Comparison view. Regenerate after bundling cached scores:
-     cd client && npm run demo:fixture -- --cache ../server/.aesthetic-cache.json --models <A>,<B> && npm run build:demo && npm run demo:screenshots -->
+     export the fixture (docs/ai-aesthetic-proxy.md → "Demo mode and the fixture"), then
+     cd client && npm run build:demo && npm run demo:screenshots -->
 <!-- ![Two models scoring the same photo side by side](docs/screenshots/comparison.png) -->
 <img src="docs/screenshots/dedup.png" width="640" alt="The /pipeline demo: nine stages, with the dedup stage open showing a burst match" /> <img src="docs/screenshots/pipeline-mobile.png" width="150" alt="The same view on a phone" />
 

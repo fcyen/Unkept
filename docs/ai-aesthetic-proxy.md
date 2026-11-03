@@ -209,21 +209,42 @@ makes `/pipeline` replay `client/public/demo/pipeline-fixture.json`. In that
 mode the aesthetic and embedding stages return before any network I/O.
 `DEMO_MODE=true` on the server disables the proxy completely.
 
-To regenerate the fixture from your local score cache:
+Cache keys include the exact JPEG bytes the browser encoded. A cache built
+in Safari, or in a different Chrome build, never matches the headless
+Chromium the generator script uses. So **export from the browser that built
+the cache**, with the proxy in cache-only mode:
+
+```bash
+# 1. Proxy: serve the cache only. No keys needed; nothing is sent upstream.
+cd server
+LLM_CACHE_ONLY=true LLM_MODEL=gpt-4o-mini LLM_MODEL_2=moonshot-v1-8k-vision-preview npm run dev
+
+# 2. Client (another terminal): open http://localhost:5173/pipeline in the
+#    same browser you used to build the cache.
+cd client && npm run dev:debug
+```
+
+When the run finishes, click **Export demo fixture** in the header. The
+status next to it reports how many model scores came from the cache
+(`14 hits · 0 misses`). Move the downloaded file to
+`client/public/demo/pipeline-fixture.json`, then rebuild with
+`npm run build:demo`.
+
+In cache-only mode a miss is returned as `not_cached` and is never re-scored,
+so the export costs nothing even if some photos aren't cached.
+`LLM_MODEL` / `LLM_MODEL_2` must be the exact names the cache was built
+with, primary first, because they are part of the key.
+
+**Headless alternative** (only when the cache was built in Chromium):
 
 ```bash
 cd client
-npm run demo:fixture -- \
-  --cache ../server/.aesthetic-cache.json \
-  --models gpt-4o-mini,moonshot-v1-8k-vision-preview   # exact names, primary first
+npm run demo:fixture -- --cache ../server/.aesthetic-cache.json --models gpt-4o-mini,moonshot-v1-8k-vision-preview
 ```
 
-The script runs the real pipeline on the sample images in headless
-Chromium. It answers model requests **only from the cache file**, so a miss
-is recorded as `not_cached` and nothing is billed. It also aborts every
-other outbound request. Cache keys include the exact JPEG bytes the browser
-encoded, so build the cache in Chrome or Chromium. Add `--semantic` with the
-CLIP server running to include semantic clusters.
+The script runs the same export code in headless Chromium. It answers model
+requests only from the cache file and aborts every other outbound request.
+Add `--semantic` with the CLIP server running to include semantic clusters.
 
 ## Prompt
 

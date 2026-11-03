@@ -14,6 +14,11 @@
  * Kimi rejects bursts above a handful of parallel requests with 429; the cap
  * queues the overflow instead of firing every photo at once.
  *
+ * LLM_CACHE_ONLY=true serves scores from the cache and never calls a
+ * provider: no API keys are needed (only LLM_MODEL / LLM_MODEL_2 names), and a
+ * miss comes back as `error: { kind: 'not_cached' }`. Used to export the demo
+ * fixture from your own browser at zero cost.
+ *
  * DEMO_MODE=true hard-disables the proxy: no provider client is created and
  * no request leaves the server, even if keys are present in the env.
  *
@@ -101,12 +106,22 @@ let providers;
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 const CONCURRENCY = Number(process.env.LLM_CONCURRENCY) || 2;
+const CACHE_ONLY = process.env.LLM_CACHE_ONLY === 'true';
 
 async function getProviders() {
   if (providers !== undefined) return providers;
   providers = [];
   if (DEMO_MODE) {
     console.log('[aesthetic] DEMO_MODE=true — proxy disabled, no provider calls will be made.');
+    return providers;
+  }
+  if (CACHE_ONLY) {
+    // Model names only — no client, so no request can leave this server.
+    for (const env of PROVIDER_ENVS) {
+      const modelName = process.env[env.model];
+      if (modelName) providers.push({ client: null, model: modelName, limit: (fn) => fn() });
+    }
+    console.log(`[aesthetic] LLM_CACHE_ONLY=true — serving ${providers.map((p) => p.model).join(', ') || 'no models'} from cache only; no provider calls.`);
     return providers;
   }
   let OpenAI;
@@ -157,6 +172,10 @@ async function scoreWithProvider(provider, item) {
   const key = cacheKey(provider.model, item.data);
   const hit = cache.get(key);
   if (hit) return { model: provider.model, ...hit, cached: true };
+  if (!provider.client) {
+    // Cache-only mode: a miss is reported, never sent to a provider.
+    return { model: provider.model, score: null, keep: null, reason: '', error: { kind: 'not_cached' } };
+  }
 
   try {
     const response = await provider.limit(() => provider.client.chat.completions.create({
@@ -195,7 +214,7 @@ router.get('/health', async (_req, res) => {
     return res.status(503).json({ status: DEMO_MODE ? 'demo' : 'unconfigured', models: [] });
   }
   await loadCache();
-  res.json({ status: 'ok', models: provs.map((p) => p.model), cached: cache.size });
+  res.json({ status: 'ok', models: provs.map((p) => p.model), cached: cache.size, cacheOnly: CACHE_ONLY });
 });
 
 // Clear the score cache — both in memory and the persisted file. Used by the
