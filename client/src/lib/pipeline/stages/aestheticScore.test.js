@@ -100,6 +100,44 @@ describe('aestheticScoreStage', () => {
     expect(result.clusters[0][1].aestheticKeep).toBe(false);
   });
 
+  it('normalises the multi-model response: primary fields + aestheticModels', async () => {
+    const clusters = [[makePhoto('p1')]];
+
+    globalThis.fetch = vi.fn().mockImplementation((url) => {
+      if (typeof url === 'string' && url.endsWith('/health')) {
+        return Promise.resolve(jsonResponse({ status: 'ok' }));
+      }
+      return Promise.resolve(
+        jsonResponse({
+          scores: [
+            {
+              id: 'p1',
+              models: [
+                { model: 'gpt-4o-mini', score: 0.9, keep: true, reason: 'crisp' },
+                { model: 'kimi', score: 0.6, keep: false, reason: 'soft' },
+              ],
+            },
+          ],
+        }),
+      );
+    });
+
+    const result = await aestheticScoreStage(
+      { clusters, burstGroups: [], burstCandidates: [] },
+    );
+
+    const photo = result.clusters[0][0];
+    // Primary fields mirror models[0] — what heroSelect consumes.
+    expect(photo.aestheticScore).toBe(0.9);
+    expect(photo.aestheticKeep).toBe(true);
+    expect(photo.aestheticReason).toBe('crisp');
+    // Both models are retained for the comparison view.
+    expect(photo.aestheticModels).toHaveLength(2);
+    expect(photo.aestheticModels[1]).toEqual({
+      model: 'kimi', score: 0.6, keep: false, reason: 'soft',
+    });
+  });
+
   it('keeps aestheticScore null for photos missing from the response', async () => {
     const clusters = [[makePhoto('p1'), makePhoto('p2')]];
 

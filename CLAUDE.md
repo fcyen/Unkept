@@ -44,6 +44,8 @@ Privacy-first web app that turns photo collections into Wrapped-style slideshows
 - Part 3 (slideshow playback) is gated behind `FEATURES.slideshow` in `client/src/config.js`. Off in the production flow — curation's Celebration screen ends on a download CTA, no slideshow. The renderer still ships in the bundle and `/dev` always exercises it so design iteration continues independent of the flag.
 - Vision keeper-scoring (`stages/aestheticScore.js`) is gated behind `FEATURES.aestheticScoring`. Off by default — when on, the proxy in `server/routes/aesthetic.js` fronts a swappable OpenAI-compatible vision LLM (dev on Kimi K2.6, demo on GPT-4o-mini — provider swap is a pure env change). Cheap Laplacian variance per cluster gates the expensive model: only the top-3 candidates per cluster reach the LLM. When the proxy is down, `heroSelect` falls back cleanly to its classical heuristic.
 
+- `DEMO_MODE` (build env, `client/src/lib/demoMode.js`) is the public portfolio build: `/pipeline` replays `client/public/demo/pipeline-fixture.json` and the aesthetic/embedding stages make no network calls. On for every Netlify build via `netlify.toml`. Regenerate the fixture with `npm run demo:fixture` (cache-only; never calls a provider).
+
 ## Dev tooling
 - `/pipeline` route renders per-stage debug snapshots. The dedup stage in particular surfaces hamming distances on every card and shows the 8×8 block-mean tile that the hash actually sees, side-by-side with the original thumbnail. When tuning a perceptual stage, work from this view rather than guessing.
 

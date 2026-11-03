@@ -17,6 +17,7 @@
  */
 
 import { parallelMap, DEFAULT_STAGE_CONCURRENCY } from '../concurrency.js';
+import { DEMO_MODE } from '../../demoMode.js';
 
 const EMBED_SERVER = 'http://localhost:8000';
 // Send photos at 512px — large enough for the server's bicubic resize to
@@ -68,7 +69,7 @@ async function fetchEmbeddings(batch) {
 
 /**
  * @param {{ photos: PhotoData[], burstGroups: BurstGroup[], burstCandidates: PhotoData[] }} input
- * @param {{ serverUrl?: string }} options
+ * @param {{ serverUrl?: string, demoMode?: boolean }} options
  * @param {(done: number, total: number) => void} onProgress
  */
 export async function embeddingStage(input, options = {}, onProgress) {
@@ -76,6 +77,13 @@ export async function embeddingStage(input, options = {}, onProgress) {
   const total = photos.length;
 
   if (total === 0) return input;
+
+  // Demo mode: no network I/O — embeddings come from the precomputed fixture.
+  if (options.demoMode ?? DEMO_MODE) {
+    for (const photo of photos) photo.embedding = null;
+    if (onProgress) onProgress(total, total);
+    return input;
+  }
 
   // Check server is reachable before doing any work.
   try {

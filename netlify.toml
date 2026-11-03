@@ -1,0 +1,41 @@
+# Netlify build for the public site (https://unkept.netlify.app).
+#
+# DEMO_MODE=true is the default for every Netlify build (production, deploy
+# previews, branch deploys). It mounts the portfolio demo at /pipeline, served
+# from the static fixture in client/public/demo/, and hard-disables every
+# model/embedding call in the client. `/` remains the real on-device app.
+#
+# No secrets belong here — this file is public. Telemetry vars
+# (VITE_BETA_TELEMETRY, VITE_TELEMETRY_ENDPOINT) stay in the Netlify UI.
+
+[build]
+  base    = "client"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  DEMO_MODE    = "true"
+  NODE_VERSION = "20"
+
+# Single-page app: client-side routes (/pipeline) fall back to index.html.
+# Real files (assets, /demo/pipeline-fixture.json) are served first.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/demo/*"
+  [headers.values]
+    Cache-Control = "public, max-age=300, must-revalidate"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "strict-origin-when-cross-origin"
