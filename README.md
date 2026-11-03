@@ -6,19 +6,19 @@
 
 Unkept culls a messy camera roll into a short set of keepers. Most of that work runs on-device with classical computer vision: EXIF, perceptual dedup, clustering and sharpness. The one step that needs taste is deciding which near-identical shot is the keeper, so that step goes to a vision LLM. **The open question was which model: a cheap one or a good one?**
 
-<!-- Comparison view. Regenerate after bundling cached scores:
-     export the fixture (docs/ai-aesthetic-proxy.md → "Demo mode and the fixture"), then
-     cd client && npm run build:demo && npm run demo:screenshots -->
-<!-- ![Two models scoring the same photo side by side](docs/screenshots/comparison.png) -->
-<img src="docs/screenshots/dedup.png" width="640" alt="The /pipeline demo: nine stages, with the dedup stage open showing a burst match" /> <img src="docs/screenshots/pipeline-mobile.png" width="150" alt="The same view on a phone" />
+<!-- Screenshots: export the fixture (docs/ai-aesthetic-proxy.md → "Demo mode and the fixture"),
+     then cd client && npm run build:demo && npm run demo:screenshots -->
+<img src="docs/screenshots/comparison.png" width="640" alt="GPT-4o-mini and Kimi scoring the same photo side by side: 0.40 skip vs 0.70 keep" /> <img src="docs/screenshots/comparison-mobile.png" width="150" alt="The comparison view on a phone" />
 
 ## What the demo shows
 
-`/pipeline` walks through every stage on 21 sample photos: EXIF → dedup → CLIP embedding → clustering → aesthetic scoring → hero → chapters → thumbnail → quality. On the aesthetic stage, **two models score the same photo side by side**, each with a score, a keep/skip call and a one-line reason. You vote for the one you agree with, and a tally adds up your verdict next to the models' own agreement rate and average score gap.
+`/pipeline` walks through every stage on 21 sample photos: EXIF → dedup → CLIP embedding (off in the demo build) → clustering → aesthetic scoring → hero → chapters → thumbnail → quality. On the aesthetic stage, **two models score the same photo side by side**, each with a score, a keep/skip call and a one-line reason. You vote for the one you agree with, and a tally adds up your verdict next to the models' own agreement rate and average score gap.
+
+**On the sample set, GPT-4o-mini vs Kimi** (`moonshot-v1-8k-vision-preview`), same prompt: they agree on keep/skip for **5 of 7** photos, and scores differ by **0.16** on average. Kimi is consistently more lenient: it averages **0.54** to GPT-4o-mini's **0.39** and keeps 4 photos to GPT-4o-mini's 2. Both disagreements are Kimi keeping a photo GPT-4o-mini skips. On `fansipan_2.JPG`, GPT-4o-mini scores 0.40 and skips it ("Subject unclear, lacks focus and expression."), while Kimi scores 0.70 and keeps it ("Good composition, clear subject, adequate lighting"). Seven photos is an anecdote, not a benchmark, which is why the demo asks for your vote.
 
 ## Key decisions
 
-- **Two models at a time, not a leaderboard.** A head-to-head on the same photo makes the difference concrete ("eyes closed" vs "nice light"), and a human vote settles it. The primary model drives hero selection; the second exists only for comparison. Swapping either one is a change of environment variables, because both go through one OpenAI-compatible proxy.
+- **Two models at a time, not a leaderboard.** A head-to-head on the same photo makes the difference concrete ("subject unclear" vs "clear subject" on the same shot), and a human vote settles it. The primary model drives hero selection; the second exists only for comparison. Swapping either one is a change of environment variables, because both go through one OpenAI-compatible proxy.
 - **A cheap filter in front of the expensive model.** A Laplacian sharpness check picks the top 3 photos per cluster; only those reach the LLM. This keeps cost bounded however large the photo roll is.
 - **Caching after hitting Kimi's concurrency limit.** Scores are cached by `sha256(model + prompt + image)`, so a re-run never re-bills a photo, and changing the prompt or model invalidates the cache automatically. Only successful scores are cached.
 - **Batching and a concurrency cap after PR review.** The client sends batches of 4, and the proxy allows at most `LLM_CONCURRENCY` calls in flight per provider. A 429 now shows up as a specific, actionable message on the affected card instead of a silent `null`.

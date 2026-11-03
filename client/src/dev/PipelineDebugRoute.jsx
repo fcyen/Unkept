@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PHASES } from '../lib/pipeline/orchestrator.js';
 import { usePipelineDebug, STAGE_ORDER, STAGE_LABELS } from './usePipelineDebug.js';
 import { usePipelineDemo } from './usePipelineDemo.js';
-import { stageViewState, modelErrorCopy, compareModels } from './pipelineStates.js';
+import { stageViewState, modelErrorCopy, compareModels, pickMostContested } from './pipelineStates.js';
 import { loadVotes, saveVotes, storageKey, toggleVote, tally } from './voteStore.js';
 import { DEMO_MODE, DEMO_FIXTURE_URL } from '../lib/demoMode.js';
 import { buildDemoFixture, buildDisplayImages } from './demoFixture.js';
@@ -236,15 +236,14 @@ function InspectorView({
   const autoSelected = useRef(false);
   const running = phase === PHASES.RUNNING;
 
-  // Demo: pre-select the first photo both models scored so the side-by-side
-  // comparison is visible without a click.
+  // Demo: pre-select the photo the models disagree on most, so the first
+  // comparison a visitor sees actually shows a contrast.
   const aesthetic = snapshots.aestheticScore;
   useEffect(() => {
     if (!isDemo || autoSelected.current || !aesthetic) return;
     autoSelected.current = true;
-    const first = Object.entries(aesthetic.perPhoto ?? {})
-      .find(([, p]) => (p.models ?? []).some((m) => m?.score != null));
-    if (first) setSelectedPhotoId(first[0]);
+    const id = pickMostContested(aesthetic.perPhoto);
+    if (id) setSelectedPhotoId(id);
   }, [isDemo, aesthetic]);
 
   const handleStageSelect = (stage) => {

@@ -222,3 +222,24 @@ export function compareModels(snap) {
     meanGap: paired ? gapSum / paired : null,
   };
 }
+
+/**
+ * The photo whose first two model results differ most: a keep/skip
+ * disagreement outranks any score gap, then the larger gap wins. Falls back
+ * to the first photo with any score. Returns null when nothing was scored.
+ */
+export function pickMostContested(perPhoto) {
+  let best = null;
+  let bestRank = -1;
+  for (const [id, p] of Object.entries(perPhoto ?? {})) {
+    const scored = (p.models ?? []).filter((m) => m?.score != null);
+    if (scored.length === 0) continue;
+    let rank = 0;
+    if (scored.length >= 2) {
+      const [a, b] = scored;
+      rank = Math.abs(a.score - b.score) + (a.keep != null && b.keep != null && a.keep !== b.keep ? 1 : 0);
+    }
+    if (rank > bestRank) { best = id; bestRank = rank; }
+  }
+  return best;
+}

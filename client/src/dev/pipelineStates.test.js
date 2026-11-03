@@ -114,3 +114,26 @@ describe('compareModels', () => {
     expect(compareModels(undefined)).toEqual({ models: [], paired: 0, agree: 0, meanGap: null });
   });
 });
+
+import { pickMostContested } from './pipelineStates.js';
+
+describe('pickMostContested', () => {
+  const m = (score, keep) => ({ model: 'x', score, keep });
+  it('prefers a keep/skip disagreement over a bigger same-verdict gap', () => {
+    expect(pickMostContested({
+      agree: { models: [m(0.9, true), m(0.5, true)] },
+      split: { models: [m(0.4, false), m(0.7, true)] },
+    })).toBe('split');
+  });
+  it('breaks ties by score gap', () => {
+    expect(pickMostContested({
+      small: { models: [m(0.4, false), m(0.6, true)] },
+      big: { models: [m(0.2, false), m(0.8, true)] },
+    })).toBe('big');
+  });
+  it('falls back to any scored photo, and null when none', () => {
+    expect(pickMostContested({ a: { models: null }, b: { models: [m(0.5, true)] } })).toBe('b');
+    expect(pickMostContested({ a: { models: null } })).toBeNull();
+    expect(pickMostContested(undefined)).toBeNull();
+  });
+});
